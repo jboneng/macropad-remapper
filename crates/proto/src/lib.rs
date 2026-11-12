@@ -26,6 +26,20 @@ pub const SLOTS_PER_LAYER: usize = 60;
 /// Number of LED colour entries per layer.
 pub const LED_COUNT: usize = 16;
 
+/// LED effect names for modes 0..=5 (generation ≥ 10), observed on a 514C:8850.
+/// The vendor tool only labels them "LED mode 0..5".
+pub const LED_MODE_NAMES: [&str; 6] = ["Off", "Steady", "Light on press", "Ripple", "Wave", "Gradient"];
+
+/// One-line description of each LED mode, same order as [`LED_MODE_NAMES`].
+pub const LED_MODE_HELP: [&str; 6] = [
+    "All LEDs off.",
+    "Every key glows steadily in its own colour.",
+    "A key lights up in its colour only while it is pressed.",
+    "Pressing a key lights it, then the light spreads to the keys around it.",
+    "Steady colours with a fading wave running from top-left to bottom-right.",
+    "Built-in green-to-amber gradient across the columns (ignores the key colours).",
+];
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
     #[error("unknown key name `{0}`")]

@@ -12,7 +12,9 @@ pub const MAX_STEPS: usize = 18;
 pub const TYPE_KEYS: u8 = 1;
 pub const TYPE_MEDIA: u8 = 2;
 pub const TYPE_MOUSE: u8 = 3;
-pub const TYPE_MACRO: u8 = 5;
+/// Listed as a type in the vendor tool, but the firmware ignores type-5 writes (tested
+/// on a 514C:8850). Timed macros are type-1 records with per-step delays instead.
+pub const TYPE_MACRO_REJECTED: u8 = 5;
 pub const TYPE_LED: u8 = 8;
 
 pub type Record = [u8; RECORD_LEN];
@@ -42,7 +44,9 @@ pub enum Action {
     Media(u16),
     /// Mouse click / wheel, optionally with a modifier pseudo-code held.
     Mouse { buttons: u8, wheel: i8, modifier: Option<u8> },
-    /// Timed sequence of key codes.
+    /// Timed sequence: each step waits its delay, then sends its key code. Encoded
+    /// as a type-1 (keys) record with delays, like the vendor tool's delay page
+    /// (hardware-confirmed: `h`, wait 1000 ms, `i`).
     Macro(Vec<Step>),
     /// Anything this tool does not model yet, kept byte-for-byte.
     Raw(Record),
@@ -102,7 +106,7 @@ impl Action {
                 if steps.len() > MAX_STEPS {
                     return Err(Error::TooManySteps(steps.len()));
                 }
-                rec[3] = TYPE_MACRO;
+                rec[3] = TYPE_KEYS;
                 rec[5] = steps.len() as u8;
                 for (i, s) in steps.iter().enumerate() {
                     put_step(&mut rec, i, s.code, s.delay_ms);
@@ -127,6 +131,9 @@ impl Action {
             Action::None
         } else {
             match ty {
+                TYPE_KEYS if (0..count).any(|i| step_delay(rec, i) != 0) => Action::Macro(
+                    (0..count).map(|i| Step { code: step_code(rec, i), delay_ms: step_delay(rec, i) }).collect(),
+                ),
                 TYPE_KEYS => Action::Keys((0..count).map(|i| step_code(rec, i)).collect()),
                 TYPE_MEDIA if count == 2 => {
                     Action::Media(u16::from_le_bytes([step_code(rec, 0), step_code(rec, 1)]))
@@ -136,9 +143,6 @@ impl Action {
                     wheel: rec[20] as i8,
                     modifier: (rec[8] != 0).then_some(rec[8]),
                 },
-                TYPE_MACRO => Action::Macro(
-                    (0..count).map(|i| Step { code: step_code(rec, i), delay_ms: step_delay(rec, i) }).collect(),
-                ),
                 _ => Action::Raw(*rec),
             }
         };
@@ -192,7 +196,21 @@ mod tests {
         ])
         .encode(&base())
         .unwrap();
-        assert_eq!(&rec[3..15], &[5, 0, 2, 0x00, 0x32, 0x0B, 0x03, 0xE8, 0x0C, 0, 0, 0]);
+        assert_eq!(&rec[3..15], &[1, 0, 2, 0x00, 0x32, 0x0B, 0x03, 0xE8, 0x0C, 0, 0, 0]);
+    }
+
+    #[test]
+    fn hardware_macro_record_decodes() {
+        // Written to a real 514C:8850 and confirmed to type "h", pause 1 s, "i".
+        let mut r = base();
+        r[1] = 0x03;
+        r[3..12].copy_from_slice(&[1, 0, 2, 0, 0, 0x0B, 0x03, 0xE8, 0x0C]);
+        let a = Action::decode(&r);
+        assert_eq!(
+            a,
+            Action::Macro(vec![Step { code: 0x0B, delay_ms: 0 }, Step { code: 0x0C, delay_ms: 1000 }])
+        );
+        assert_eq!(a.encode(&r).unwrap(), r);
     }
 
     #[test]

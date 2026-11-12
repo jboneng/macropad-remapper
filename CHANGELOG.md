@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Macros now work.** They used record type 5, which the keypad silently ignores, so
+  the key kept its old action. Macros are now written like the vendor tool's delay
+  page: a normal key record with a delay before each key. Confirmed on a 514C:8850
+  (`h`, one second's pause, `i`).
+- **Changing keys and LEDs in one Write now keeps the LEDs.** The save command used to
+  be sent after the LED frames, which made the keypad throw the new LED settings away.
+  The vendor tool has the same bug. The save is now sent before the LEDs, and both
+  survive a replug.
+
+### Changed
+- **LED effects have names:** Off, Steady, Light on press, Ripple, Wave and Gradient,
+  identified on real hardware. The app shows a short description of the selected
+  effect, and the user guide has a table.
+- **Protocol notes:**
+  - `EF EF` enters firmware-update mode; it is not a factory reset.
+  - The knob slot order (left, press, right) is confirmed.
+  - Media and mouse writes are confirmed on hardware.
+  - The layout presets are documented.
+
 ## [0.3.1] - 2026-11-12
 
 ### Changed

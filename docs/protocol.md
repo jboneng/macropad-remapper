@@ -33,9 +33,30 @@ Confidence legend: **H** = confirmed on real hardware (514C:8850, 2026-11-12),
   - This matches the vendor tool, which commits only when key records were written.
   - When keys and LEDs change together, the vendor's save routine sends **all dirty
     records → `FE B0` for layers 0, 1, 2 → one `FD FE FF` commit → sleep 200 ms** (O,
-    traced in the save handler `on_confirmButton_clicked`). macropad-remapper sends the
-    same sequence. Given the LED-only finding above, that final commit may make the
-    LEDs reset on replug in the vendor tool too. Not yet tested on hardware (?).
+    traced in the save handler `on_confirmButton_clicked`). On hardware that order
+    **loses the LED change**: the keys were saved, but the keypad read back its old
+    LED settings (**H**). So the vendor tool has this bug too.
+  - macropad-remapper sends **records → commit → 200 ms → `FE B0` × 3, no commit**.
+    With that order both the keys and the LEDs were saved and survived a replug (**H**).
+- **Mouse and media writes** (**H**): `media: volup` raised the Windows volume, and
+  `mouse: { wheel: 1 }` scrolled up.
+- **Macros** (**H**): a type-5 record is silently ignored, and the slot keeps its old
+  action. A **type-1** record with delays works: `FD 03 01 01 00 02 | 00 00 0B | 03 E8 0C`
+  typed `h`, waited one second, then typed `i`. Each step's delay is waited *before*
+  its key is sent. This matches the vendor UI, whose delay page only edits type-1
+  records.
+- **Knobs** (**H**): the left knob uses slots 17/18/19, the middle knob 20/21/22 and
+  the right knob 23/24/25. Within each triple: turn left (CCW), press, turn right (CW).
+- **LED modes** (**H**, set on all three layers):
+
+  | Mode | Effect |
+  |---|---|
+  | 0 | Off |
+  | 1 | Steady: every key glows in its own colour |
+  | 2 | Light on press: a key lights in its colour only while pressed |
+  | 3 | Ripple: the pressed key lights, then the light spreads to its neighbours |
+  | 4 | Wave: steady colours with a fading wave from top-left to bottom-right |
+  | 5 | Gradient: built-in green-to-amber across the columns; ignores the key colours |
 
 ## Device identification (O)
 
@@ -90,12 +111,9 @@ The vendor's 16 layout presets for `FC FC keys knobs flag` (O, from the
   firmware gets `FA 0F 03 L` (15 key records, then 3 × knobs extra records).
   This tool requests `keys + 3 × knobs` (= 25 on the 16+3 pad) and stops early if a
   read times out.
-- Slot 0 is unused. Slots 1..keys are keys, and each knob takes the next three slots.
-  On the 514C:8850 the user confirmed the grouping from the factory letters: knob A
-  types W/X/Y (slots 23/24/25), knob B T/U/V (20/21/22), knob C Q/R/S (17/18/19).
-  The middle slot of each triple is the press (**H**). Which of the outer two is
-  counter-clockwise is still unconfirmed (?). The vendor UI draws them as
-  `KN_LEFT` / `KN_IN` / `KN_RIGHT`, which suggests first = left/CCW (I).
+- Slot 0 is unused. Slots 1..keys are keys, and each knob takes the next three slots,
+  in the order turn left (CCW), press, turn right (CW). Knobs are numbered left to
+  right (**H**, 514C:8850). The vendor UI draws them as `KN_LEFT` / `KN_IN` / `KN_RIGHT`.
 - The vendor's internal button-to-slot table stops at 25, so 25 slots is the
   most any supported keypad uses (O).
 - Layers are numbered 1..3 in the `FA` read and 0..2 in the LED commands (O).
@@ -106,7 +124,7 @@ The vendor's 16 layout presets for `FC FC keys knobs flag` (O, from the
 |--------|---------|
 | 0 | `0xFD` (O, initialised by the app; not part of the read-back) |
 | 1, 2 | Slot number (1-based), layer number (1-based) (**H**) |
-| 3 | Action type (O): `1` keyboard, `2` media, `3` mouse, `5` macro (timed), `8` LED |
+| 3 | Action type (O): `1` keyboard (also timed sequences, via the step delays), `2` media, `3` mouse, `8` LED. The vendor's tab list also uses `5` for its delay page, but the firmware ignores type-5 writes (**H**) |
 | 4 | Mouse sub-mode (O): `1` buttons/wheel, `4` "special" (codes 1..5). On non-mouse factory slots it is sometimes `1` (**H**, meaning ?). macropad-remapper keeps it while the type is unchanged |
 | 5 | Number of steps used (O) |
 | 6 + 3n, 7 + 3n | Step *n* delay, big-endian, ms (O; UI range 50..60000 for macros; the UI's default per-step delay is 50 ms = `00 32`) |
@@ -147,9 +165,10 @@ Up to 18 steps fit in a record (O).
 
 ## LED modes
 
-- Generation ≥ 10: mode `0..5` selects one of six UI buttons. The vendor app does
-  **not** name the effects: its buttons are labelled only "LED模式0" … "LED模式5"
-  ("LED mode 0–5") (O). What each mode looks like can only be learned by trying it
-  on the keypad (?). The mode is stored per layer (one byte in each `FE B0 L` frame).
+- Generation ≥ 10: mode `0..5`. The vendor app labels them only "LED模式0" …
+  "LED模式5" ("LED mode 0–5") (O). The effects were identified on hardware (**H**):
+  0 off, 1 steady, 2 light on press, 3 ripple, 4 wave, 5 gradient. See the table under
+  *Hardware observations*. The mode is stored per layer (one byte in each `FE B0 L`
+  frame), so a layer on mode 0 is dark even if other layers are lit.
   Per-key colours are RGB triples.
 - Legacy: one byte, `mode << 4 | colour`, defaulting to high nibble `5`.

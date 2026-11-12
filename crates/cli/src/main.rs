@@ -58,7 +58,8 @@ enum Cmd {
         /// Layer 1..3.
         #[arg(long, default_value_t = 1)]
         layer: u8,
-        /// Mode 0..5 (as numbered in the vendor tool).
+        /// Mode 0..5: 0 off, 1 steady, 2 light on press, 3 ripple, 4 wave,
+        /// 5 gradient (built-in colours).
         #[arg(long)]
         mode: u8,
         /// Colours "#rrggbb", one per key (repeat the flag).

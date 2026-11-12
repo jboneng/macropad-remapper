@@ -422,11 +422,14 @@ impl<T: Transport> Keypad<T> {
         }
         let leds_changed = new_leds != image.leds;
 
-        // Then send exactly like the vendor tool's "download":
-        //   all changed key records → (if any LED changed) the LED block of *all three*
-        //   layers in order 0,1,2 → one commit.
-        // The firmware only persists LED settings when it receives the complete set;
-        // writing just the changed layer lights the keys but is lost on replug.
+        // Then send: all changed key records → one commit (only if records were written)
+        // → (if any LED changed) the LED block of *all three* layers in order 0,1,2,
+        // with no commit after it.
+        // Hardware-confirmed on a 514C:8850:
+        // - the firmware only persists LED settings when it receives all three layers;
+        // - a commit *after* the LED frames makes it restore its stored LED settings, so
+        //   the new LEDs are lost. The vendor tool sends records → LEDs → commit and
+        //   therefore loses LED changes made together with key changes; we commit first.
         let mut report = ApplyReport::default();
         for changed in &layer_records {
             for rec in changed {
@@ -434,16 +437,14 @@ impl<T: Transport> Keypad<T> {
             }
             report.records_written += changed.len();
         }
+        if report.records_written > 0 {
+            self.commit()?;
+        }
         if leds_changed {
             for (layer, cfg) in new_leds.iter().enumerate() {
                 self.send(frame::write_leds(layer as u8, cfg))?;
             }
             report.led_layers_written = new_leds.len();
-        }
-        // The vendor tool only sends the commit when key records were written; for an
-        // LED-only change it sends just the three FE B0 frames.
-        if report.records_written > 0 {
-            self.commit()?;
         }
         report.frames = self.mutations[start..].to_vec();
         Ok(report)
@@ -539,8 +540,8 @@ mod tests {
         let image = k.read_image().unwrap();
         let profile = Profile::from_yaml("layers:\n  - {}\n  - leds: { mode: 3, colors: ['#102030'] }\n").unwrap();
         let rep = k.apply(&profile, &image).unwrap();
-        // Like the vendor tool: all three LED layers in order, then one commit —
-        // the firmware only persists LEDs when it gets the full set.
+        // All three LED layers in order and no commit: the firmware only persists LEDs
+        // when it gets the full set.
         assert_eq!(rep.led_layers_written, 3);
         let heads: Vec<[u8; 4]> = rep.frames.iter().map(|f| [f[1], f[2], f[3], f[4]]).collect();
         assert_eq!(
@@ -555,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn records_then_leds_then_single_commit() {
+    fn records_then_commit_then_leds() {
         let mut k = Keypad::connect(sim(), false).unwrap();
         let image = k.read_image().unwrap();
         let profile =
@@ -570,7 +571,8 @@ mod tests {
                 _ => "record",
             })
             .collect();
-        assert_eq!(kinds, ["record", "record", "led", "led", "led", "commit"]);
+        // Commit before the LEDs: a commit after them makes the keypad drop the new LEDs.
+        assert_eq!(kinds, ["record", "record", "commit", "led", "led", "led"]);
         assert_eq!(k.into_transport().commits, 1);
     }
 

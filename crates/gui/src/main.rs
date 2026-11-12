@@ -953,11 +953,18 @@ impl App {
         ui.label(RichText::new("Effect (whole layer)").small().color(MUTED));
         ui.horizontal_wrapped(|ui| {
             for m in 0..=5u8 {
-                if pill(ui, self.leds[layer].mode == m, &format!("Mode {m}")).clicked() {
+                let name = macropad_remapper_proto::LED_MODE_NAMES[m as usize];
+                if pill(ui, self.leds[layer].mode == m, name)
+                    .on_hover_text(format!("Mode {m}: {}", macropad_remapper_proto::LED_MODE_HELP[m as usize]))
+                    .clicked()
+                {
                     self.leds[layer].mode = m;
                 }
             }
         });
+        if let Some(help) = macropad_remapper_proto::LED_MODE_HELP.get(self.leds[layer].mode as usize) {
+            ui.label(RichText::new(*help).small().color(MUTED));
+        }
         ui.add_space(6.0);
         let keys = self.keys().min(LED_COUNT);
         if self.slot < keys {
@@ -995,7 +1002,6 @@ impl App {
         } else {
             ui.label(RichText::new("Select a key to change its colour.").small().color(MUTED));
         }
-        ui.label(RichText::new("Mode names are not decoded yet — try them and see.").small().color(MUTED));
     }
 
     fn confirm_dialog(&mut self, ctx: &egui::Context) {

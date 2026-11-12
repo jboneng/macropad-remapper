@@ -105,15 +105,26 @@ Click **↺** to set what turning left does, the **knob itself** for pressing, a
 turning right. Then choose an action exactly like a key. A common setup is
 ↺ = *Volume −*, ● = *Mute*, ↻ = *Volume +*.
 
-> If turning a knob does the opposite of what you expect, swap the ↺ and ↻ actions. The
-> left/right order hasn't been confirmed on every model yet.
+> The ↺ / ● / ↻ order is confirmed on the 16-key + 3-knob model. If a knob on another
+> model turns the wrong way, swap the ↺ and ↻ actions.
 
 ### Lighting
 
 In the **Lighting** card:
 
-- **Effect (whole layer):** choose Mode 0–5. The effects haven't been named yet; try them and
-  see what each one does on your keypad.
+- **Effect (whole layer):** each layer has its own effect.
+
+  | Mode | Name | What it does |
+  |---|---|---|
+  | 0 | Off | All LEDs off |
+  | 1 | Steady | Every key glows in its own colour |
+  | 2 | Light on press | A key lights up in its colour only while pressed |
+  | 3 | Ripple | The pressed key lights up and the light spreads to its neighbours |
+  | 4 | Wave | Steady colours with a fading wave from top-left to bottom-right |
+  | 5 | Gradient | Built-in green-to-amber gradient; ignores the key colours |
+
+  Remember that the effect belongs to a layer: if the keys stay dark, check which layer
+  the keypad is on.
 - **Key N colour:** pick a colour for the selected key, or click a preset dot.
 - **Use this colour for every key:** copies the colour to all keys on this layer.
 
