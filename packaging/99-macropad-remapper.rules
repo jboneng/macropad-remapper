@@ -1,0 +1,6 @@
+# Allow logged-in users to configure MINI_KEYBOARD macropads without sudo.
+# Install:  sudo cp 99-macropad-remapper.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1189", ATTRS{idProduct}=="88[345][0-9]", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="514c", ATTRS{idProduct}=="88[345][0-9]", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1189", ATTRS{idProduct}=="88[345][0-9]", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="514c", ATTRS{idProduct}=="88[345][0-9]", TAG+="uaccess"

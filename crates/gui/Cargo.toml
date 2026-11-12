@@ -1,0 +1,17 @@
+[package]
+name = "macropad-remapper-gui"
+description = "Graphical configurator for MINI_KEYBOARD macropads"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "macropad-remapper-gui"
+path = "src/main.rs"
+
+[dependencies]
+macropad-remapper-proto.workspace = true
+macropad-remapper-device.workspace = true
+eframe.workspace = true
+rfd.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "macropad-remapper"
+description = "Command-line configurator for MINI_KEYBOARD macropads"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "macropad-remapper"
+path = "src/main.rs"
+
+[dependencies]
+macropad-remapper-proto.workspace = true
+macropad-remapper-device.workspace = true
+clap.workspace = true
+anyhow.workspace = true

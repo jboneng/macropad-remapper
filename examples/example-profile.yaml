@@ -1,0 +1,39 @@
+# Example macropad-remapper profile.
+#
+# Slots are numbered from 1: first the keys (left-to-right, top-to-bottom),
+# then three slots per knob. The knob order (CCW / press / CW) is not yet
+# confirmed on hardware. Run `macropad-remapper dump` to see how your keypad numbers them.
+# Slots you leave out are not touched on upload.
+#
+# Run `macropad-remapper keys` for every usable key / modifier / media name.
+
+layers:
+  # ---------------------------------------------------------------- layer 1
+  - slots:
+      1: ctrl-c                    # keys pressed together
+      2: ctrl-v
+      3: ctrl-shift-esc
+      4: { media: play }
+      5: { media: prev }
+      6: { media: next }
+      7: f13                       # handy for binding in other apps
+      8: "!"                       # shifted symbols work too
+      9: { mouse: { buttons: [middle] } }
+      10: { mouse: { wheel: 1, modifier: ctrl } }    # zoom in
+      11: { mouse: { wheel: -1, modifier: ctrl } }   # zoom out
+      12:                          # timed macro: types "hi" then Enter
+        macro:
+          - { key: h, delay: 50 }
+          - { key: i, delay: 50 }
+          - { key: enter, delay: 50 }
+    leds:
+      mode: 1
+      colors: ["#ff0000", "#ff8000", "#ffff00", "#00ff00",
+               "#00ffff", "#0000ff", "#8000ff", "#ff00ff",
+               "#ffffff", "#ff0000", "#00ff00", "#0000ff"]
+
+  # ---------------------------------------------------------------- layer 2
+  - slots:
+      1: { media: mute }
+      2: { media: voldown }
+      3: { media: volup }

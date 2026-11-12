@@ -1,0 +1,886 @@
+//! macropad-remapper-gui: graphical configurator. All USB I/O runs on a worker thread.
+
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod theme;
+mod widgets;
+mod worker;
+
+use eframe::egui::{self, Color32, RichText};
+use macropad_remapper_device::DeviceImage;
+use macropad_remapper_proto::frame::LedConfig;
+use macropad_remapper_proto::keys;
+use macropad_remapper_proto::profile::{ActionSpec, LayerSpec, LedSpec, Profile};
+use macropad_remapper_proto::record::{Action, MouseButtons, Step, MAX_STEPS};
+use macropad_remapper_proto::{LAYERS, LED_COUNT};
+use theme::*;
+use widgets::{card, ghost, keycap, knob, pill, primary, status_chip, KnobPart};
+use worker::{Job, Reply, Worker};
+
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1180.0, 780.0])
+            .with_min_inner_size([900.0, 640.0])
+            .with_title("Macropad Remapper"),
+        ..Default::default()
+    };
+    // `--simulate KEYS,KNOBS` starts with a simulated keypad (handy for demos/screenshots).
+    let simulate = std::env::args().skip_while(|a| a != "--simulate").nth(1).and_then(|s| {
+        let (k, n) = s.split_once(',')?;
+        Some((k.trim().parse().ok()?, n.trim().parse().ok()?))
+    });
+    eframe::run_native(
+        "macropad-remapper",
+        options,
+        Box::new(move |cc| {
+            theme::apply(&cc.egui_ctx);
+            let mut app = App::default();
+            if let Some((k, n)) = simulate {
+                app.start_simulator(k, n);
+            } else if std::env::args().any(|a| a == "--connect") {
+                app.send(Job::Connect, "Connecting…");
+            }
+            Ok(Box::new(app))
+        }),
+    )
+}
+
+// ------------------------------------------------------------ labels --
+
+fn key_label(code: u8) -> String {
+    let name = keys::code_name(code);
+    match name.as_str() {
+        "ctrl" => "Ctrl".into(),
+        "shift" => "Shift".into(),
+        "alt" => "Alt".into(),
+        "win" => "Win".into(),
+        "rctrl" => "RCtrl".into(),
+        "rshift" => "RShift".into(),
+        "ralt" => "AltGr".into(),
+        "rwin" => "RWin".into(),
+        "space" => "Space".into(),
+        "enter" => "Enter".into(),
+        "esc" => "Esc".into(),
+        "backspace" => "⌫".into(),
+        "tab" => "Tab".into(),
+        "up" => "↑".into(),
+        "down" => "↓".into(),
+        "left" => "←".into(),
+        "right" => "→".into(),
+        "minus" => "-".into(),
+        "equal" => "=".into(),
+        "lbracket" => "[".into(),
+        "rbracket" => "]".into(),
+        "backslash" => "\\".into(),
+        "semicolon" => ";".into(),
+        "quote" => "'".into(),
+        "grave" => "`".into(),
+        "comma" => ",".into(),
+        "dot" => ".".into(),
+        "slash" => "/".into(),
+        "pageup" => "PgUp".into(),
+        "pagedown" => "PgDn".into(),
+        "printscreen" => "PrtSc".into(),
+        n if n.starts_with("kp") => format!("Num {}", &n[2..]),
+        n if n.len() == 1 => n.to_uppercase(),
+        n if n.starts_with('f') && n[1..].parse::<u8>().is_ok() => n.to_uppercase(),
+        n => {
+            let mut c = n.chars();
+            c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+        }
+    }
+}
+
+const MEDIA_LABELS: &[(&str, &str)] = &[
+    ("play", "Play / Pause"),
+    ("stop", "Stop"),
+    ("prev", "Previous"),
+    ("next", "Next"),
+    ("mute", "Mute"),
+    ("volup", "Volume +"),
+    ("voldown", "Volume −"),
+    ("brightnessup", "Brightness +"),
+    ("brightnessdown", "Brightness −"),
+    ("mediaselect", "Media player"),
+    ("mail", "Mail"),
+    ("calculator", "Calculator"),
+    ("mycomputer", "My computer"),
+    ("wwwsearch", "Web search"),
+    ("wwwhome", "Browser home"),
+    ("wwwback", "Browser back"),
+    ("wwwforward", "Browser forward"),
+    ("wwwstop", "Browser stop"),
+    ("wwwrefresh", "Refresh"),
+    ("wwwfavorites", "Favourites"),
+];
+
+fn media_label(code: u16) -> String {
+    let n = keys::media_name(code);
+    MEDIA_LABELS.iter().find(|(k, _)| *k == n).map_or(n, |(_, l)| l.to_string())
+}
+
+fn action_label(a: &Action) -> String {
+    match a {
+        Action::None => String::new(),
+        Action::Keys(c) => c.iter().map(|&c| key_label(c)).collect::<Vec<_>>().join("+"),
+        Action::Media(m) => media_label(*m),
+        Action::Mouse { buttons, wheel, modifier } => {
+            let mut parts = Vec::new();
+            if let Some(m) = modifier {
+                parts.push(key_label(*m));
+            }
+            for (bit, n) in [(MouseButtons::LEFT, "L-click"), (MouseButtons::RIGHT, "R-click"), (MouseButtons::MIDDLE, "M-click")] {
+                if buttons & bit != 0 {
+                    parts.push(n.into());
+                }
+            }
+            match wheel.signum() {
+                1 => parts.push("Wheel ↑".into()),
+                -1 => parts.push("Wheel ↓".into()),
+                _ => {}
+            }
+            if parts.is_empty() { "Mouse".into() } else { parts.join("+") }
+        }
+        Action::Macro(s) => format!("Macro · {}", s.len()),
+        Action::Raw(_) => "Custom".into(),
+    }
+}
+
+/// Map an egui key to our key name (for "record shortcut").
+fn egui_key_name(k: egui::Key) -> Option<&'static str> {
+    use egui::Key::*;
+    Some(match k {
+        A => "a", B => "b", C => "c", D => "d", E => "e", F => "f", G => "g", H => "h", I => "i",
+        J => "j", K => "k", L => "l", M => "m", N => "n", O => "o", P => "p", Q => "q", R => "r",
+        S => "s", T => "t", U => "u", V => "v", W => "w", X => "x", Y => "y", Z => "z",
+        Num0 => "0", Num1 => "1", Num2 => "2", Num3 => "3", Num4 => "4", Num5 => "5", Num6 => "6",
+        Num7 => "7", Num8 => "8", Num9 => "9",
+        F1 => "f1", F2 => "f2", F3 => "f3", F4 => "f4", F5 => "f5", F6 => "f6", F7 => "f7",
+        F8 => "f8", F9 => "f9", F10 => "f10", F11 => "f11", F12 => "f12", F13 => "f13", F14 => "f14",
+        F15 => "f15", F16 => "f16", F17 => "f17", F18 => "f18", F19 => "f19", F20 => "f20",
+        Enter => "enter", Escape => "esc", Backspace => "backspace", Tab => "tab", Space => "space",
+        Insert => "insert", Delete => "delete", Home => "home", End => "end", PageUp => "pageup",
+        PageDown => "pagedown", ArrowUp => "up", ArrowDown => "down", ArrowLeft => "left",
+        ArrowRight => "right", Minus => "minus", Equals => "equal", Comma => "comma", Period => "dot",
+        Slash => "slash", Backslash => "backslash", Semicolon => "semicolon", Quote => "quote",
+        Backtick => "grave", OpenBracket => "lbracket", CloseBracket => "rbracket",
+        _ => return None,
+    })
+}
+
+// --------------------------------------------------------------- app --
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    None,
+    Keys,
+    Media,
+    Mouse,
+    Macro,
+    Raw,
+}
+
+impl Kind {
+    fn of(a: &Action) -> Kind {
+        match a {
+            Action::None => Kind::None,
+            Action::Keys(_) => Kind::Keys,
+            Action::Media(_) => Kind::Media,
+            Action::Mouse { .. } => Kind::Mouse,
+            Action::Macro(_) => Kind::Macro,
+            Action::Raw(_) => Kind::Raw,
+        }
+    }
+}
+
+struct App {
+    worker: Worker,
+    busy: bool,
+    status: String,
+    status_is_error: bool,
+    simulated: bool,
+    image: Option<DeviceImage>,
+    /// Editable copy: `actions[layer][slot-1]`.
+    actions: Vec<Vec<Action>>,
+    leds: Vec<LedConfig>,
+    layer: usize,
+    slot: usize,
+    chord_buf: String,
+    chord_err: Option<String>,
+    recording: bool,
+    confirm_write: bool,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        App {
+            worker: Worker::spawn(),
+            busy: false,
+            status: "Not connected".into(),
+            status_is_error: false,
+            simulated: false,
+            image: None,
+            actions: Vec::new(),
+            leds: Vec::new(),
+            layer: 0,
+            slot: 0,
+            chord_buf: String::new(),
+            chord_err: None,
+            recording: false,
+            confirm_write: false,
+        }
+    }
+}
+
+impl App {
+    fn send(&mut self, job: Job, status: &str) {
+        self.busy = true;
+        self.status = status.into();
+        self.status_is_error = false;
+        self.worker.send(job);
+    }
+
+    fn start_simulator(&mut self, keys: u8, knobs: u8) {
+        self.simulated = true;
+        self.send(Job::Simulate(keys, knobs), "Starting simulator…");
+    }
+
+    fn load_image(&mut self, img: DeviceImage) {
+        self.actions = img.records.iter().map(|l| l.iter().map(Action::decode).collect()).collect();
+        self.leds = img.leds.clone();
+        self.image = Some(img);
+        self.slot = self.slot.min(self.slot_count().saturating_sub(1));
+        self.select(self.slot);
+    }
+
+    fn keys(&self) -> usize {
+        self.image.as_ref().map_or(0, |i| i.handshake.keys as usize).min(self.slot_count())
+    }
+
+    fn slot_count(&self) -> usize {
+        self.actions.first().map_or(0, Vec::len)
+    }
+
+    fn select(&mut self, slot: usize) {
+        self.slot = slot;
+        self.recording = false;
+        self.chord_err = None;
+        self.chord_buf = match self.actions.get(self.layer).and_then(|l| l.get(slot)) {
+            Some(Action::Keys(c)) => keys::format_chord(c),
+            _ => String::new(),
+        };
+    }
+
+    fn to_profile(&self) -> Profile {
+        Profile {
+            device: self.image.as_ref().map(|i| i.handshake),
+            layers: self
+                .actions
+                .iter()
+                .zip(&self.leds)
+                .map(|(acts, leds)| LayerSpec {
+                    slots: acts.iter().enumerate().map(|(i, a)| ((i + 1) as u8, ActionSpec::from_action(a))).collect(),
+                    leds: Some(LedSpec::from_config(leds)),
+                })
+                .collect(),
+        }
+    }
+
+    fn merge_profile(&mut self, p: &Profile) -> Result<(), String> {
+        p.validate().map_err(|e| e.to_string())?;
+        if self.actions.is_empty() {
+            return Err("Connect (or start the simulator) first so the key layout is known.".into());
+        }
+        for (li, layer) in p.layers.iter().enumerate() {
+            for (&slot, spec) in &layer.slots {
+                let a = spec.to_action().map_err(|e| e.to_string())?;
+                *self.actions[li]
+                    .get_mut(slot as usize - 1)
+                    .ok_or_else(|| format!("layer {} slot {slot} does not exist on this keypad", li + 1))? = a;
+            }
+            if let Some(l) = &layer.leds {
+                self.leds[li] = l.to_config().map_err(|e| e.to_string())?;
+            }
+        }
+        self.select(self.slot);
+        Ok(())
+    }
+
+    /// Number of changed key slots + changed LED layers.
+    fn pending_changes(&self) -> usize {
+        let Some(img) = &self.image else { return 0 };
+        let keys: usize = img
+            .records
+            .iter()
+            .zip(&self.actions)
+            .map(|(recs, acts)| recs.iter().zip(acts).filter(|(r, a)| a.encode(r).map_or(true, |n| &n != *r)).count())
+            .sum();
+        keys + img.leds.iter().zip(&self.leds).filter(|(a, b)| a != b).count()
+    }
+
+    fn slot_name(&self, i: usize) -> String {
+        let keys = self.keys();
+        if i < keys {
+            format!("Key {}", i + 1)
+        } else {
+            let k = i - keys;
+            format!("Knob {} · {}", k / 3 + 1, ["turn left", "press", "turn right"][k % 3])
+        }
+    }
+
+    fn led_color(&self, key: usize) -> Option<Color32> {
+        (key < LED_COUNT).then(|| {
+            let [r, g, b] = self.leds[self.layer].colors[key];
+            Color32::from_rgb(r, g, b)
+        })
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = root.ctx().clone();
+        while let Some(reply) = self.worker.poll() {
+            self.busy = false;
+            match reply {
+                Reply::Image(img, msg) => {
+                    self.load_image(*img);
+                    self.status = msg;
+                    self.status_is_error = false;
+                }
+                Reply::Error(e) => {
+                    self.status = e;
+                    self.status_is_error = true;
+                }
+            }
+        }
+        if self.busy {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        self.handle_recording(&ctx);
+
+        egui::Panel::top("toolbar")
+            .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin::symmetric(16, 10)))
+            .show(root, |ui| self.toolbar(ui));
+        egui::Panel::bottom("status")
+            .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin::symmetric(16, 6)))
+            .show(root, |ui| {
+                ui.horizontal(|ui| {
+                    if self.busy {
+                        ui.spinner();
+                    }
+                    let color = if self.status_is_error { DANGER } else { MUTED };
+                    ui.label(RichText::new(&self.status).small().color(color));
+                });
+            });
+
+        if self.actions.is_empty() {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(BG))
+                .show(root, |ui| self.empty_state(ui));
+            return;
+        }
+
+        egui::Panel::right("inspector")
+            .resizable(false)
+            .exact_size(380.0)
+            .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin { left: 0, right: 16, top: 8, bottom: 16 }))
+            .show(root, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui));
+            });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin { left: 16, right: 16, top: 8, bottom: 16 }))
+            .show(root, |ui| {
+                egui::ScrollArea::both().show(ui, |ui| self.device_view(ui));
+            });
+
+        if self.confirm_write {
+            self.confirm_dialog(&ctx);
+        }
+    }
+}
+
+impl App {
+    fn toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("⌨").size(22.0).color(ACCENT));
+            ui.label(RichText::new("Macropad Remapper").size(18.0).strong().color(TEXT));
+            ui.label(RichText::new(concat!("v", env!("CARGO_PKG_VERSION"))).small().color(MUTED));
+            ui.add_space(16.0);
+            let idle = !self.busy;
+            let connected = self.image.is_some();
+            if ghost(ui, idle, "🔌  Connect").clicked() {
+                self.simulated = false;
+                self.send(Job::Connect, "Connecting…");
+            }
+            if ghost(ui, idle && connected, "⟳  Reload").clicked() {
+                self.send(Job::Read, "Reading from keypad…");
+            }
+            if ghost(ui, idle && connected, "📂  Open").clicked() {
+                self.open_profile();
+            }
+            if ghost(ui, idle && connected, "💾  Save").clicked() {
+                self.save_profile();
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let changes = self.pending_changes();
+                let label = if changes == 0 { "Write to keypad".to_string() } else { format!("Write {changes} change(s)") };
+                if primary(ui, idle && changes > 0, &label).clicked() {
+                    self.confirm_write = true;
+                }
+                if let Some(img) = &self.image {
+                    let h = img.handshake;
+                    let (color, what) = if self.simulated {
+                        (WARN, "Simulator".to_string())
+                    } else if h.is_legacy() {
+                        (WARN, "Keypad (read-only firmware)".to_string())
+                    } else {
+                        (OK, "Keypad connected".to_string())
+                    };
+                    status_chip(ui, color, &format!("{what} · {} keys · {} knobs", h.keys, h.knobs));
+                }
+            });
+        });
+    }
+
+    fn empty_state(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(ui.available_height() * 0.22);
+            ui.label(RichText::new("⌨").size(64.0).color(ACCENT));
+            ui.add_space(8.0);
+            ui.label(RichText::new("Configure your macropad").size(26.0).strong().color(TEXT));
+            ui.label(
+                RichText::new("Plug in the keypad and connect. Nothing is changed until you press Write.").color(MUTED),
+            );
+            ui.add_space(20.0);
+            ui.horizontal(|ui| {
+                let w = 340.0;
+                ui.add_space((ui.available_width() - w).max(0.0) / 2.0);
+                if primary(ui, !self.busy, "🔌  Connect keypad").clicked() {
+                    self.simulated = false;
+                    self.send(Job::Connect, "Connecting…");
+                }
+                if ghost(ui, !self.busy, "Try the simulator").clicked() {
+                    self.start_simulator(16, 3);
+                }
+            });
+            ui.add_space(24.0);
+            ui.label(
+                RichText::new("Supports USB 1189 / 514C : 8830–8833, 8840, 8842, 8850, 8851").small().color(MUTED),
+            );
+        });
+    }
+
+    fn device_view(&mut self, ui: &mut egui::Ui) {
+        // Layer selector
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("LAYER").small().strong().color(MUTED));
+            for l in 0..LAYERS {
+                if pill(ui, self.layer == l, &format!("  {}  ", l + 1)).clicked() {
+                    self.layer = l;
+                    self.select(self.slot);
+                }
+            }
+        });
+        ui.add_space(10.0);
+
+        let keys = self.keys();
+        let knobs = (self.slot_count() - keys) / 3;
+        let cols = match keys {
+            0..=4 => keys.max(1),
+            5..=9 => 3,
+            10..=16 => 4,
+            _ => 5,
+        };
+        let gap = 14.0;
+        let knob_gap = 12.0;
+        let knob_row_w = knobs as f32 * widgets::KNOB_WIDTH + knobs.saturating_sub(1) as f32 * knob_gap;
+        // Keys stretch so the grid is as wide as the knob row (min 104 px).
+        let cap_w = ((knob_row_w - (cols as f32 - 1.0) * gap) / cols as f32).clamp(104.0, 150.0);
+        let cap = egui::vec2(cap_w, 84.0);
+        let grid_w = cols as f32 * cap.x + (cols as f32 - 1.0) * gap;
+        let inner_w = grid_w.max(knob_row_w);
+        let plate_w = inner_w + 2.0 * 28.0;
+        ui.horizontal(|ui| {
+            ui.add_space(((ui.available_width() - plate_w) / 2.0).max(0.0));
+            ui.vertical(|ui| self.device_plate(ui, keys, knobs, cols, cap, gap, knob_gap, inner_w));
+        });
+        ui.add_space(8.0);
+        ui.vertical_centered(|ui| {
+            ui.label(
+                RichText::new("Click a key, or a knob's ↺ ● ↻ to edit what turning/pressing it does. Knob order not yet verified on hardware.")
+                    .small()
+                    .color(MUTED),
+            );
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn device_plate(
+        &mut self,
+        ui: &mut egui::Ui,
+        keys: usize,
+        knobs: usize,
+        cols: usize,
+        cap: egui::Vec2,
+        gap: f32,
+        knob_gap: f32,
+        inner_w: f32,
+    ) {
+        egui::Frame::new()
+            .fill(DEVICE)
+            .stroke(egui::Stroke::new(1.0, BORDER))
+            .corner_radius(22)
+            .inner_margin(28)
+            .show(ui, |ui| {
+                ui.set_width(inner_w);
+                // Knobs across the top, like the real board
+                if knobs > 0 {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = knob_gap;
+                        for k in 0..knobs {
+                            let base = keys + k * 3;
+                            let selected = (self.slot >= base && self.slot < base + 3).then(|| {
+                                [KnobPart::Left, KnobPart::Press, KnobPart::Right][self.slot - base]
+                            });
+                            let short = |a: &Action| {
+                                let s = action_label(a);
+                                if s.chars().count() > 9 { s.chars().take(8).collect::<String>() + "…" } else { s }
+                            };
+                            let acts = &self.actions[self.layer];
+                            let texts = [short(&acts[base]), short(&acts[base + 1]), short(&acts[base + 2])];
+                            let texts = [texts[0].as_str(), texts[1].as_str(), texts[2].as_str()];
+                            if let Some(part) = knob(ui, &format!("KNOB {}", k + 1), selected, texts) {
+                                let off = match part {
+                                    KnobPart::Left => 0,
+                                    KnobPart::Press => 1,
+                                    KnobPart::Right => 2,
+                                };
+                                self.select(base + off);
+                            }
+                        }
+                    });
+                    ui.add_space(18.0);
+                }
+                // Key grid
+                egui::Grid::new("keys").spacing([gap, gap]).show(ui, |ui| {
+                    for i in 0..keys {
+                        let text = action_label(&self.actions[self.layer][i]);
+                        let led = self.led_color(i);
+                        if keycap(ui, cap, &(i + 1).to_string(), &text, led, self.slot == i).clicked() {
+                            self.select(i);
+                        }
+                        if (i + 1).is_multiple_of(cols) {
+                            ui.end_row();
+                        }
+                    }
+                });
+            });
+    }
+
+    fn inspector(&mut self, ui: &mut egui::Ui) {
+        let (layer, slot) = (self.layer, self.slot);
+        if slot >= self.slot_count() {
+            return;
+        }
+        let title = self.slot_name(slot);
+        card(ui, "", |ui| {
+            ui.label(RichText::new(&title).size(20.0).strong().color(TEXT));
+            ui.label(RichText::new(format!("Layer {}", layer + 1)).color(MUTED));
+        });
+        ui.add_space(10.0);
+
+        card(ui, "Action", |ui| {
+            let current = Kind::of(&self.actions[layer][slot]);
+            ui.horizontal_wrapped(|ui| {
+                for (k, label) in [
+                    (Kind::None, "None"),
+                    (Kind::Keys, "Shortcut"),
+                    (Kind::Media, "Media"),
+                    (Kind::Mouse, "Mouse"),
+                    (Kind::Macro, "Macro"),
+                ] {
+                    if pill(ui, current == k, label).clicked() && current != k {
+                        self.actions[layer][slot] = match k {
+                            Kind::None | Kind::Raw => Action::None,
+                            Kind::Keys => Action::Keys(Vec::new()),
+                            Kind::Media => Action::Media(0xE9),
+                            Kind::Mouse => Action::Mouse { buttons: MouseButtons::LEFT, wheel: 0, modifier: None },
+                            Kind::Macro => Action::Macro(vec![Step { code: 0x04, delay_ms: 50 }]),
+                        };
+                        self.select(slot);
+                        if k == Kind::Keys {
+                            self.recording = true;
+                        }
+                    }
+                }
+            });
+            ui.add_space(8.0);
+            self.action_editor(ui);
+        });
+        ui.add_space(10.0);
+
+        card(ui, "Lighting", |ui| self.lighting_editor(ui));
+    }
+
+    fn action_editor(&mut self, ui: &mut egui::Ui) {
+        let (layer, slot) = (self.layer, self.slot);
+        let recording = self.recording;
+        match &mut self.actions[layer][slot] {
+            Action::None => {
+                ui.label(RichText::new("This key does nothing.").color(MUTED));
+            }
+            Action::Keys(_) => {
+                let rec_text = if recording { "●  Press the shortcut now…" } else { "●  Record shortcut" };
+                let btn = egui::Button::new(RichText::new(rec_text).color(if recording { Color32::WHITE } else { TEXT }))
+                    .fill(if recording { DANGER.gamma_multiply(0.7) } else { CARD_HI })
+                    .corner_radius(8)
+                    .min_size(egui::vec2(ui.available_width(), 36.0));
+                if ui.add(btn).clicked() {
+                    self.recording = !recording;
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new("or type it").small().color(MUTED));
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut self.chord_buf)
+                        .hint_text("e.g. ctrl-shift-esc")
+                        .desired_width(f32::INFINITY),
+                );
+                if resp.changed() {
+                    self.apply_chord_buf();
+                }
+                if let Some(e) = &self.chord_err {
+                    ui.label(RichText::new(e).small().color(DANGER));
+                }
+                ui.collapsing(RichText::new("Key names").small().color(MUTED), |ui| {
+                    ui.label(RichText::new("Modifiers: ctrl shift alt win rctrl rshift ralt rwin").small());
+                    ui.label(RichText::new(keys::KEYS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(" ")).small());
+                    ui.label(RichText::new(keys::SHIFTED.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(" ")).small());
+                });
+            }
+            Action::Media(code) => {
+                ui.horizontal_wrapped(|ui| {
+                    for (name, label) in MEDIA_LABELS {
+                        let c = keys::media_code(name).expect("table");
+                        if pill(ui, *code == c, label).clicked() {
+                            *code = c;
+                        }
+                    }
+                });
+            }
+            Action::Mouse { buttons, wheel, modifier } => {
+                ui.label(RichText::new("Buttons").small().color(MUTED));
+                ui.horizontal(|ui| {
+                    for (name, bit) in [("Left", MouseButtons::LEFT), ("Middle", MouseButtons::MIDDLE), ("Right", MouseButtons::RIGHT)] {
+                        if pill(ui, *buttons & bit != 0, name).clicked() {
+                            *buttons ^= bit;
+                        }
+                    }
+                });
+                ui.label(RichText::new("Scroll wheel").small().color(MUTED));
+                ui.horizontal(|ui| {
+                    for (v, name) in [(0i8, "None"), (1, "Up"), (-1, "Down")] {
+                        if pill(ui, *wheel == v, name).clicked() {
+                            *wheel = v;
+                        }
+                    }
+                });
+                ui.label(RichText::new("Hold modifier").small().color(MUTED));
+                ui.horizontal(|ui| {
+                    if pill(ui, modifier.is_none(), "None").clicked() {
+                        *modifier = None;
+                    }
+                    for (code, name) in [(0xF1u8, "Ctrl"), (0xF2, "Shift"), (0xF3, "Alt")] {
+                        if pill(ui, *modifier == Some(code), name).clicked() {
+                            *modifier = Some(code);
+                        }
+                    }
+                });
+                ui.label(RichText::new("Tip: Ctrl + wheel = zoom in most apps.").small().color(MUTED));
+            }
+            Action::Macro(steps) => {
+                ui.label(RichText::new("Keys are tapped in order, waiting the delay before each.").small().color(MUTED));
+                let mut remove = None;
+                for (i, s) in steps.iter_mut().enumerate() {
+                    egui::Frame::new().fill(CARD_HI).corner_radius(8).inner_margin(6).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(format!("{:>2}", i + 1)).color(MUTED).monospace());
+                            ui.add(egui::DragValue::new(&mut s.delay_ms).range(0..=60000).suffix(" ms").speed(5));
+                            egui::ComboBox::from_id_salt(("step", i))
+                                .width(110.0)
+                                .selected_text(key_label(s.code))
+                                .show_ui(ui, |ui| {
+                                    for (_, c) in keys::MODIFIERS.iter().chain(keys::KEYS.iter()) {
+                                        ui.selectable_value(&mut s.code, *c, key_label(*c));
+                                    }
+                                });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add(egui::Button::new(RichText::new("✕").color(MUTED)).frame(false)).clicked() {
+                                    remove = Some(i);
+                                }
+                            });
+                        });
+                    });
+                }
+                if let Some(i) = remove {
+                    steps.remove(i);
+                }
+                ui.add_space(4.0);
+                ui.add_enabled_ui(steps.len() < MAX_STEPS, |ui| {
+                    if pill(ui, false, &format!("+ Add step  ({}/{MAX_STEPS})", steps.len())).clicked() {
+                        steps.push(Step { code: 0x04, delay_ms: 50 });
+                    }
+                });
+            }
+            Action::Raw(rec) => {
+                ui.label(RichText::new("This key uses a feature macropad-remapper doesn't understand yet. It is kept exactly as is.").color(MUTED));
+                let hex = rec.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+                ui.label(RichText::new(hex).monospace().small().color(MUTED));
+            }
+        }
+    }
+
+    fn apply_chord_buf(&mut self) {
+        let (layer, slot) = (self.layer, self.slot);
+        match keys::parse_chord(&self.chord_buf) {
+            Ok(c) if c.len() <= MAX_STEPS => {
+                self.actions[layer][slot] = Action::Keys(c);
+                self.chord_err = None;
+            }
+            Ok(_) => self.chord_err = Some(format!("At most {MAX_STEPS} keys")),
+            Err(e) => self.chord_err = Some(e.to_string()),
+        }
+    }
+
+    /// While recording, capture the next key press (with modifiers) as the shortcut.
+    fn handle_recording(&mut self, ctx: &egui::Context) {
+        if !self.recording || !matches!(self.actions.get(self.layer).and_then(|l| l.get(self.slot)), Some(Action::Keys(_))) {
+            return;
+        }
+        let events = ctx.input(|i| i.events.clone());
+        for e in events {
+            if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
+                if let Some(name) = egui_key_name(key) {
+                    let mut parts = Vec::new();
+                    if modifiers.ctrl {
+                        parts.push("ctrl");
+                    }
+                    if modifiers.shift {
+                        parts.push("shift");
+                    }
+                    if modifiers.alt {
+                        parts.push("alt");
+                    }
+                    if modifiers.mac_cmd {
+                        parts.push("win");
+                    }
+                    parts.push(name);
+                    self.chord_buf = parts.join("-");
+                    self.apply_chord_buf();
+                    self.recording = false;
+                    ctx.input_mut(|i| i.events.clear());
+                    return;
+                }
+            }
+        }
+    }
+
+    fn lighting_editor(&mut self, ui: &mut egui::Ui) {
+        let layer = self.layer;
+        ui.label(RichText::new("Effect (whole layer)").small().color(MUTED));
+        ui.horizontal_wrapped(|ui| {
+            for m in 0..=5u8 {
+                if pill(ui, self.leds[layer].mode == m, &format!("Mode {m}")).clicked() {
+                    self.leds[layer].mode = m;
+                }
+            }
+        });
+        ui.add_space(6.0);
+        let keys = self.keys().min(LED_COUNT);
+        if self.slot < keys {
+            let i = self.slot;
+            ui.label(RichText::new(format!("Key {} colour", i + 1)).small().color(MUTED));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().interact_size = egui::vec2(56.0, 30.0);
+                ui.color_edit_button_srgb(&mut self.leds[layer].colors[i]);
+                for c in [
+                    [0xff, 0x00, 0x00],
+                    [0xff, 0x80, 0x00],
+                    [0xff, 0xff, 0x00],
+                    [0x00, 0xff, 0x00],
+                    [0x00, 0xff, 0xff],
+                    [0x00, 0x00, 0xff],
+                    [0x80, 0x00, 0xff],
+                    [0xff, 0xff, 0xff],
+                ] {
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::click());
+                    ui.painter().circle_filled(rect.center(), 9.0, Color32::from_rgb(c[0], c[1], c[2]));
+                    if resp.hovered() {
+                        ui.painter().circle_stroke(rect.center(), 10.5, egui::Stroke::new(1.5, TEXT));
+                    }
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        self.leds[layer].colors[i] = c;
+                    }
+                }
+            });
+            if pill(ui, false, "Use this colour for every key").clicked() {
+                let c = self.leds[layer].colors[i];
+                for k in 0..keys {
+                    self.leds[layer].colors[k] = c;
+                }
+            }
+        } else {
+            ui.label(RichText::new("Select a key to change its colour.").small().color(MUTED));
+        }
+        ui.label(RichText::new("Mode names are not decoded yet — try them and see.").small().color(MUTED));
+    }
+
+    fn confirm_dialog(&mut self, ctx: &egui::Context) {
+        let changes = self.pending_changes();
+        egui::Modal::new(egui::Id::unique("confirm_write")).show(ctx, |ui| {
+            ui.set_width(380.0);
+            ui.label(RichText::new("Write to keypad?").size(18.0).strong());
+            ui.add_space(4.0);
+            ui.label(RichText::new(format!(
+                "{changes} change(s) will be written. The current keypad configuration is backed up to your home folder first."
+            ))
+            .color(MUTED));
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if primary(ui, true, "Write").clicked() {
+                    self.confirm_write = false;
+                    let p = self.to_profile();
+                    self.send(Job::Apply(Box::new(p)), "Backing up and writing…");
+                }
+                if ghost(ui, true, "Cancel").clicked() {
+                    self.confirm_write = false;
+                }
+            });
+        });
+    }
+
+    fn open_profile(&mut self) {
+        if let Some(path) = rfd::FileDialog::new().add_filter("YAML", &["yaml", "yml"]).pick_file() {
+            let res = std::fs::read_to_string(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|t| Profile::from_yaml(&t).map_err(|e| e.to_string()))
+                .and_then(|p| self.merge_profile(&p));
+            (self.status, self.status_is_error) = match res {
+                Ok(()) => (format!("Loaded {} — press Write to apply it", path.display()), false),
+                Err(e) => (e, true),
+            };
+        }
+    }
+
+    fn save_profile(&mut self) {
+        if let Some(path) =
+            rfd::FileDialog::new().add_filter("YAML", &["yaml", "yml"]).set_file_name("macropad-remapper-profile.yaml").save_file()
+        {
+            (self.status, self.status_is_error) = match std::fs::write(&path, self.to_profile().to_yaml()) {
+                Ok(()) => (format!("Saved {}", path.display()), false),
+                Err(e) => (e.to_string(), true),
+            };
+        }
+    }
+}

@@ -1,0 +1,104 @@
+# MINI_KEYBOARD macropad HID protocol
+
+Recovered by static reverse engineering of the vendor configurator
+`MINI_KEYBOARD.exe` (Qt5/MinGW, 2025-06-22,
+SHA-256 `6497dc125af85c6a39e94c57384262ff0fa30748f11c40e482e65030097fc247`)
+with Ghidra (via REA). No vendor code is included in this project.
+
+Confidence legend: **H** = confirmed on real hardware (514C:8850, 2026-11-12),
+**O** = observed in decompiled code, **I** = inferred,
+**?** = unconfirmed (verify with a USB capture before relying on it).
+
+## Hardware observations (514C:8850, 16 keys + 3 knobs, generation 11)
+
+- **Interfaces.** Interface 0 is the vendor collection (usage page `FF00`, report ID 3,
+  64-byte input and output). Interface 1 holds the keyboard, mouse and consumer
+  collections, and Windows rejects writes to it.
+- **Read layer.** `FA 19 00 01` (25 records, layer 1) returns exactly 25 replies.
+  - Each reply has the form `03 FA slot layer type b4 count delay_hi delay_lo code …`.
+  - So `rec[1]` = slot (1..25) and `rec[2]` = layer (1..3).
+  - `rec[4]` is `01` on some factory slots; its meaning is unknown (?).
+- **Read LEDs.** `FA B0 00` returns `03 FA mode RGB×16`. The factory colours equal the
+  vendor tool's built-in default table.
+- **Write key.** `FD 0A 01 01 00 01 00 00 04` followed by `FD FE FF` set layer 1 slot 10 to
+  `a`. It read back correctly, and pressing the key typed `a`.
+
+## Device identification (O)
+
+| Vendor ID | Product IDs (tried in this order) |
+|-----------|-----------------------------------|
+| `0x1189`  | `8842 8840 8830 8831 8832 8833 8850 8851` |
+| `0x514C`  | same list (fallback vendor)       |
+
+- The vendor app enumerates and opens the first entry with `interface_number == 0` (O).
+- Older `1189:8840/8842/8890` boards that do not answer the handshake below use a
+  different protocol. That protocol is handled by
+  [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool).
+
+## Transport (O)
+
+- Output: 65-byte HID output report. Byte 0 is report ID `0x03`, followed by 64 payload bytes.
+- Input: 64-byte reads. In the vendor app, `resp[0]` is the report ID.
+- In the tables below, `p[n]` means payload byte *n* (so frame byte *n+1*).
+
+## Commands
+
+| Name | Payload (`p[0..]`) | Reply |
+|------|--------------------|-------|
+| Handshake (**H**) | `FB FB FB` | `03 FB keys knobs generation 00…`. Example from a real 514C:8850: `03 fb 10 03 0b` = 16 keys, 3 knobs, generation 11. **Generation < 10 → legacy record layout.** (Ghidra's stack offsets for this reply were wrong; hardware wins.) |
+| Read layer (O) | `FA n 00 L` (legacy: `FA n knobs L`) | `n` replies, one per slot 1..n. Record bytes `rec[1..59]` = `r[2..60]` |
+| Write record (O) | `rec[0..63]` | none |
+| Commit (O) | `FD FE FF` | none. The vendor app sleeps 200 ms afterwards |
+| Read LEDs (O) | `FA B0 L` (L = layer 0..2) | `r[2]` = mode, `r[3..50]` = 16 × RGB |
+| Write LEDs (O) | `FE B0 L mode RGB×16` | none. Sent for each of the 3 layers, then commit |
+| Select layout (O) | `FC FC keys knobs flag` | none. The vendor then rewrites defaults and re-handshakes. **Dangerous** |
+| Unknown (O/?) | `EF EF` | none. Purpose unknown (factory reset?). **Not used** |
+
+- The vendor app always sends the commit after a batch of record writes (O).
+- The number of records `n` the app requests in `FA n` is not yet confirmed (?).
+  This tool requests `keys + 3 × knobs` and stops early if a read times out.
+- Slot 0 is unused. Slots 1..keys are keys. Knob slots follow; their order
+  (CCW / press / CW) is unconfirmed (?).
+- Layers are numbered 1..3 in the `FA` read and 0..2 in the LED commands (O).
+
+## Key record, generation ≥ 10 (64 bytes)
+
+| Offset | Meaning |
+|--------|---------|
+| 0 | `0xFD` (O, initialised by the app; not part of the read-back) |
+| 1, 2 | Slot number (1-based), layer number (1-based) (**H**) |
+| 3 | Action type (O): `1` keyboard, `2` media, `3` mouse, `5` macro (timed), `8` LED |
+| 4 | Mouse sub-mode (O): `1` buttons/wheel, `4` "special" (codes 1..5). On non-mouse factory slots it is sometimes `1` (**H**, meaning ?). macropad-remapper keeps it while the type is unchanged |
+| 5 | Number of steps used (O) |
+| 6 + 3n, 7 + 3n | Step *n* delay, big-endian, ms (O; UI range 50..60000 for macros) |
+| 8 + 3n | Step *n* code (O) |
+
+Up to 18 steps fit in a record (O).
+
+### Code encoding (O)
+
+- **Keyboard keys**: standard USB HID keyboard usage IDs (A = `0x04` … `0x64`).
+- **Modifiers** are separate steps with pseudo-codes:
+  `F1` LCtrl, `F2` LShift, `F3` LAlt, `F4` LGui, `F5` RCtrl, `F6` RShift, `F7` RAlt, `F8` RGui.
+  - `Ctrl+C` = steps `[F1, 06]`.
+  - Shifted symbols such as `!` = `[F2, 1E]`.
+- **Media** (type 2): a 16-bit HID consumer usage split over two steps, `code[0]` = low byte and
+  `code[1]` = high byte. Examples: Play/Pause `0x00CD`, Mute `0x00E2`, Vol+ `0x00E9`,
+  Vol− `0x00EA`, Next `0x00B5`, Prev `0x00B6`, Stop `0x00B7`, Calculator `0x0192`,
+  Mail `0x018A`, WWW Home `0x0223`, Back `0x0224`, Forward `0x0225`, Refresh `0x0227`.
+- **Mouse** (type 3, `rec[5]=4`): `code[1]` (=`rec[11]`) buttons (1 left, 2 right, 4 middle),
+  `code[4]` (=`rec[20]`) wheel (`01` up, `FF` down), and an optional `code[0]` modifier pseudo-code
+  (F1/F2/F3 = Ctrl/Shift/Alt + wheel).
+
+## Key record, legacy generation (< 10)
+
+- `rec[0]=FE`, `rec[1]` = id, `rec[2]` = layer+1, `rec[3]` = type, `rec[9]` = count.
+- Steps are 2 bytes starting at `rec[10]` (`modifier-mask, keycode`, with standard HID modifier bits).
+- Only 49 bytes are read back per record.
+- Support in this project is **experimental**.
+
+## LED modes
+
+- Generation ≥ 10: mode `0..5` selects one of six UI buttons (exact effect names ?).
+  Per-key colours are RGB triples.
+- Legacy: one byte, `mode << 4 | colour`, defaulting to high nibble `5`.

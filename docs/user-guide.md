@@ -1,0 +1,315 @@
+# Macropad Remapper — User guide
+
+This guide is for anyone with one of the small "MINI_KEYBOARD" macropads who wants to
+change what its keys and knobs do. You don't need to be a programmer.
+
+**Contents**
+
+1. [Before you start](#1-before-you-start)
+2. [Using the desktop app](#2-using-the-desktop-app)
+3. [Using the command line](#3-using-the-command-line)
+4. [Profile files](#4-profile-files)
+5. [Backups and undo](#5-backups-and-undo)
+6. [Troubleshooting](#6-troubleshooting)
+7. [Reference: key and media names](#7-reference-key-and-media-names)
+
+---
+
+## 1. Before you start
+
+### What you need
+
+- A supported keypad. It identifies itself over USB as vendor `1189` or `514C` with a product
+  ID in the 88xx range. The tested model is `514C:8850` (16 keys, 3 knobs).
+- The two programs: `macropad-remapper-gui` (desktop app) and `macropad-remapper`
+  (command line). Download them from the project's Releases page, or build them from
+  source (see the README).
+
+### Platform notes
+
+- **Windows:** nothing to install. If Windows SmartScreen warns about an unknown publisher,
+  choose *More info → Run anyway* (the binaries are not code-signed).
+- **Linux:** install the udev rule once, then unplug and replug the keypad:
+  ```sh
+  sudo cp 99-macropad-remapper.rules /etc/udev/rules.d/
+  sudo udevadm control --reload && sudo udevadm trigger
+  ```
+- **macOS:** the first time you connect, macOS may ask to allow *Input Monitoring*. Allow it
+  in *System Settings → Privacy & Security*.
+
+### Two things to know about your keypad
+
+- **Layers.** The keypad stores **3 layers**: three complete sets of key assignments. Your
+  keypad has its own way of switching between them, often a key combination or a small
+  button; check its manual.
+- **Knobs.** Each knob has **three actions**: turn left (↺), press (●) and turn right (↻).
+
+---
+
+## 2. Using the desktop app
+
+### Connect
+
+1. Plug in the keypad.
+2. Start **Macropad Remapper** (`macropad-remapper-gui`).
+3. Click **Connect keypad**.
+
+The app reads the keypad's current settings and draws it. A green chip in the top right
+says **Keypad connected · 16 keys · 3 knobs** (or whatever your model has).
+
+Connecting only *reads* from the keypad. Nothing changes until you press **Write**.
+
+> Want to look around first? Click **Try the simulator** on the start screen, or start the
+> app with `macropad-remapper-gui --simulate 16,3`. The chip turns orange and nothing is
+> ever sent to real hardware.
+
+### The screen
+
+- **Top bar**
+  - **Connect:** connect to the keypad.
+  - **Reload:** re-read the keypad.
+  - **Open / Save:** load or save profile files.
+  - **Write:** send your changes to the keypad.
+- **Left**
+  - **LAYER 1 2 3** chooses which layer you are editing.
+  - Below it, your keypad: knobs along the top, keys underneath. Each key shows what it
+    currently does, and its glow is its LED colour.
+- **Right:** the inspector for whatever you selected, with an **Action** card and a
+  **Lighting** card.
+
+### Change what a key does
+
+1. Pick the layer at the top left.
+2. Click the key.
+3. In **Action**, choose one of the types below.
+
+| Type | What it does | How to set it |
+|---|---|---|
+| **None** | The key does nothing | — |
+| **Shortcut** | Presses keys together, like `Ctrl+C` | Click **Record shortcut** and press the combination on your normal keyboard, or type it in the box, e.g. `ctrl-shift-esc` |
+| **Media** | Volume, play/pause, next track, calculator… | Click one of the buttons |
+| **Mouse** | Click or scroll | Choose buttons, scroll direction and an optional held modifier (Ctrl + scroll = zoom in most apps) |
+| **Macro** | Taps keys one after another with delays | Add steps; for each step pick a key and the delay (ms) to wait before it |
+
+Repeat for as many keys as you like. The **Write** button counts your pending changes.
+
+> **Recording tips**
+> - The Windows key and some system shortcuts (like `Alt+Tab`) are grabbed by the operating
+>   system before the app sees them. Type those instead, e.g. `win-d`.
+> - Handy shortcuts for a macropad are `f13` … `f24`. No normal keyboard has them, so no app
+>   uses them by default, and you can bind them freely in OBS, Discord, games and so on.
+
+### Knobs
+
+Click **↺** to set what turning left does, the **knob itself** for pressing, and **↻** for
+turning right. Then choose an action exactly like a key. A common setup is
+↺ = *Volume −*, ● = *Mute*, ↻ = *Volume +*.
+
+> If turning a knob does the opposite of what you expect, swap the ↺ and ↻ actions. The
+> left/right order hasn't been confirmed on every model yet.
+
+### Lighting
+
+In the **Lighting** card:
+
+- **Effect (whole layer):** choose Mode 0–5. The effects haven't been named yet; try them and
+  see what each one does on your keypad.
+- **Key N colour:** pick a colour for the selected key, or click a preset dot.
+- **Use this colour for every key:** copies the colour to all keys on this layer.
+
+### Write to the keypad
+
+1. Click **Write N change(s)**.
+2. Confirm.
+
+The app then:
+
+1. Re-reads the keypad and **saves a backup** to your home folder
+   (`macropad-remapper-backup-<number>.yaml`).
+2. Writes only the keys that changed.
+3. Reads everything back, so the screen shows what's really on the keypad.
+
+The status bar at the bottom tells you how many keys were written and where the backup
+is. Changes take effect immediately and survive unplugging.
+
+### Save and open profiles
+
+- **Save** writes everything you see (all layers and LEDs) to a `.yaml` file.
+- **Open** loads a profile into the editor. It is not written to the keypad until you
+  press **Write**, so you can review it first.
+
+---
+
+## 3. Using the command line
+
+Open a terminal (on Windows: PowerShell or Command Prompt) in the folder containing
+`macropad-remapper`.
+
+### Is the keypad there?
+
+```sh
+macropad-remapper list    # USB interfaces of any supported keypad
+macropad-remapper info    # asks the keypad what it is
+```
+
+`info` prints, for example:
+
+```
+keys:       16
+knobs:      3
+generation: 11
+slots:      1..=25 (keys first, then 3 per knob)
+```
+
+### Save the current setup
+
+```sh
+macropad-remapper dump -o my-keypad.yaml
+```
+
+Do this once and keep the file. It's your factory backup.
+
+### Change it
+
+Edit `my-keypad.yaml` in any text editor (see [Profile files](#4-profile-files)), then:
+
+```sh
+macropad-remapper upload my-keypad.yaml --dry-run   # show exactly what would be sent
+macropad-remapper upload my-keypad.yaml             # do it
+```
+
+`upload` first saves a backup of the current keypad to
+`macropad-remapper-backup-<number>.yaml` in the current folder, then writes only the slots
+that changed, for example:
+
+```
+backup of current configuration: macropad-remapper-backup-1794481977.yaml
+wrote 3 key record(s) and 0 LED layer(s)
+```
+
+If the keypad already matches, it says so and writes nothing.
+
+### Other commands
+
+| Command | Purpose |
+|---|---|
+| `macropad-remapper led --layer 1 --mode 3 --color '#ff0000' --color '#00ff00'` | Set a layer's LED mode and per-key colours (one `--color` per key, in order). Add `--dry-run` to preview |
+| `macropad-remapper keys` | List every key, modifier and media name you can use |
+| `macropad-remapper layout --keys N --knobs M --i-know-what-im-doing` | Change the keypad's layout preset. **Resets its mappings.** Only needed if the keypad reports the wrong number of keys/knobs |
+| `--simulate 16,3` (any command) | Use a pretend keypad instead of USB |
+| `-v` (any command) | Print every command byte sent to the keypad |
+
+---
+
+## 4. Profile files
+
+A profile is a plain-text YAML file. Indentation matters: use spaces, not tabs.
+
+```yaml
+layers:
+  - slots:                       # layer 1
+      1: ctrl-c                  # shortcut: keys pressed together
+      2: ctrl-v
+      3: f13
+      4: { media: play }         # media key
+      5: { media: volup }
+      6: { mouse: { buttons: [left] } }              # mouse click
+      7: { mouse: { wheel: 1, modifier: ctrl } }     # Ctrl + scroll up (zoom in)
+      8:                         # timed macro: types "hi" and Enter
+        macro:
+          - { key: h, delay: 50 }
+          - { key: i, delay: 50 }
+          - { key: enter, delay: 50 }
+      9: none                    # does nothing
+    leds:
+      mode: 1
+      colors: ["#ff0000", "#00ff00", "#0000ff"]      # key 1, key 2, key 3, …
+
+  - slots:                       # layer 2
+      1: { media: mute }
+```
+
+### Slot numbers
+
+- Slots `1` … `N` are the keys, counted left to right, top to bottom.
+- After the keys come **three slots per knob**: turn left, press, turn right.
+- On a 16-key, 3-knob pad:
+
+  | Slots | Control |
+  |---|---|
+  | 1–16 | Keys |
+  | 17, 18, 19 | Knob 1: ↺, ●, ↻ |
+  | 20, 21, 22 | Knob 2: ↺, ●, ↻ |
+  | 23, 24, 25 | Knob 3: ↺, ●, ↻ |
+
+- Run `dump` to see your own keypad's numbering.
+
+### Rules
+
+- **Slots you leave out are not touched.** A profile can be just the three keys you care
+  about.
+- **Shortcuts** are written with `-` or `+` between keys: `ctrl-shift-esc`, `alt+f4`, `win-d`.
+  Single symbols such as `!`, `@` and `?` work on their own; Shift is added for you.
+- **Macro** steps take one key (or one modifier) each. `delay` is in milliseconds (0–60000)
+  and is waited *before* that step. At most 18 steps.
+- **`raw: …`** appears in dumps for settings the tool doesn't understand yet. Leave it as it
+  is; it will be written back unchanged.
+- **The `device:` block** at the top of a dump is informational and ignored on upload.
+
+---
+
+## 5. Backups and undo
+
+- **Every write makes a backup first.**
+  - The app saves it to your home folder.
+  - The command line saves it to the folder you ran it from.
+- **To undo**, upload the backup, either with `macropad-remapper upload <backup>.yaml` or
+  with **Open → Write** in the app.
+- **For a factory-fresh copy**, run `macropad-remapper dump -o factory.yaml` once and keep
+  the file somewhere safe.
+
+---
+
+## 6. Troubleshooting
+
+| Problem | What to do |
+|---|---|
+| **"no supported keypad found"** | Check the cable and try another USB port. Run `macropad-remapper list`; if it shows nothing, your model may have a different USB ID — please open an issue with the output of your OS's USB device list |
+| **"the keypad did not answer the handshake"** | Your board may use the older protocol; try [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool). Also close the vendor tool if it's running, since only one program can talk to the keypad at a time |
+| **Linux: "permission denied"** | Install the udev rule (see [Before you start](#1-before-you-start)) and replug |
+| **"legacy firmware: read-only"** | Your keypad uses an older record format. You can dump it but not write yet |
+| **"slot N is not reported by the device"** | Your profile uses a slot number your keypad doesn't have; check `info` |
+| **A knob turns the wrong way** | Swap its ↺ and ↻ actions |
+| **A shortcut doesn't record** | The OS grabbed it first; type it into the box instead |
+| **The keypad behaves strangely after a write** | Upload your backup (see [Backups and undo](#5-backups-and-undo)) |
+
+When reporting a problem, include the output of `macropad-remapper info` and, if relevant,
+`macropad-remapper -v upload <file> --dry-run`.
+
+---
+
+## 7. Reference: key and media names
+
+Run `macropad-remapper keys` for the authoritative list. Summary:
+
+- **Modifiers:** `ctrl` `shift` `alt` `win` and the right-hand versions `rctrl` `rshift` `ralt`
+  `rwin`.
+  - Aliases: `control`, `cmd`, `command`, `super`, `gui`, `meta` (all = `win`); `option` = `alt`;
+    `altgr` = `ralt`.
+- **Letters and digits:** `a`–`z`, `0`–`9`.
+- **Function keys:** `f1`–`f24`.
+- **Editing and navigation:** `enter` `esc` `backspace` `tab` `space` `insert` `delete` `home`
+  `end` `pageup` `pagedown` `up` `down` `left` `right` `capslock` `printscreen` `scrolllock`
+  `pause` `menu`.
+- **Punctuation:** `minus` `equal` `lbracket` `rbracket` `backslash` `semicolon` `quote` `grave`
+  `comma` `dot` `slash`, or the characters themselves: `-` `=` `[` `]` `\` `;` `'` `` ` `` `,`
+  `.` `/`.
+- **Shifted symbols:** `!` `@` `#` `$` `%` `^` `&` `*` `(` `)` `_` `+` `{` `}` `|` `:` `"` `~`
+  `<` `>` `?`.
+- **Number pad:** `kp0`–`kp9` `kpdot` `kpenter` `kpplus` `kpminus` `kpasterisk` `kpslash`
+  `numlock`.
+- **Media:** `play` `stop` `prev` `next` `mute` `volup` `voldown` `brightnessup`
+  `brightnessdown` `mediaselect` `mail` `calculator` `mycomputer` `wwwsearch` `wwwhome`
+  `wwwback` `wwwforward` `wwwstop` `wwwrefresh` `wwwfavorites`.
+- **Anything else:** a raw HID code as hex, `0x68` for a key or `{ media: 0x0223 }` for a
+  media key.

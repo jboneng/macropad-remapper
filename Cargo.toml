@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/proto", "crates/device", "crates/cli", "crates/gui"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jboneng/macropad-remapper"
+rust-version = "1.80"
+
+[workspace.dependencies]
+macropad-remapper-proto = { path = "crates/proto" }
+macropad-remapper-device = { path = "crates/device" }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"
+anyhow = "1"
+hidapi = "2.6"
+clap = { version = "4.5", features = ["derive"] }
+eframe = "0.37"
+rfd = "0.18"
