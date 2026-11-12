@@ -38,6 +38,9 @@ Confidence legend: **H** = confirmed on real hardware (514C:8850, 2026-11-12),
     LED settings (**H**). So the vendor tool has this bug too.
   - macropad-remapper sends **records → commit → 200 ms → `FE B0` × 3, no commit**.
     With that order both the keys and the LEDs were saved and survived a replug (**H**).
+    However, the **live** LED display kept the old settings until the keypad was
+    replugged. LED-only writes update the display immediately (**H**). A longer pause
+    between the commit and the LED frames might fix this; untested (?).
 - **Mouse and media writes** (**H**): `media: volup` raised the Windows volume, and
   `mouse: { wheel: 1 }` scrolled up.
 - **Macros** (**H**): a type-5 record is silently ignored, and the slot keeps its old

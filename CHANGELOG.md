@@ -14,7 +14,8 @@ All notable changes to this project are documented here. The format follows
 - **Changing keys and LEDs in one Write now keeps the LEDs.** The save command used to
   be sent after the LED frames, which made the keypad throw the new LED settings away.
   The vendor tool has the same bug. The save is now sent before the LEDs, and both
-  survive a replug.
+  survive a replug. Known issue: after such a combined Write the keypad keeps showing
+  the old LEDs until it is unplugged and plugged back in.
 
 ### Changed
 - **LED effects have names:** Off, Steady, Light on press, Ripple, Wave and Gradient,
