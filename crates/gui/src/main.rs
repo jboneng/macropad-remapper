@@ -22,6 +22,10 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1180.0, 780.0])
             .with_min_inner_size([900.0, 640.0])
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../../../packaging/icons/icon-256.png"))
+                    .expect("embedded icon is a valid PNG"),
+            )
             .with_title("Macropad Remapper"),
         ..Default::default()
     };

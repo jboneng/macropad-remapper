@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+authors = ["jboneng"]
+homepage = "https://github.com/jboneng/macropad-remapper"
 
 [[bin]]
 name = "macropad-remapper-gui"
@@ -15,3 +17,53 @@ macropad-remapper-proto.workspace = true
 macropad-remapper-device.workspace = true
 eframe.workspace = true
 rfd.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+# ---------------------------------------------------------------- Linux packages --
+# Built in CI after `cargo build --release --workspace`:
+#   cargo deb -p macropad-remapper-gui --no-build
+#   cargo generate-rpm -p crates/gui
+
+[package.metadata.deb]
+name = "macropad-remapper"
+maintainer = "jboneng <https://github.com/jboneng>"
+copyright = "macropad-remapper contributors"
+license-file = ["../../LICENSE-MIT", "0"]
+extended-description = """\
+Open-source configurator for the MINI_KEYBOARD macropads (USB 1189/514C:88xx). \
+Remap keys and knobs to shortcuts, media keys, mouse actions and timed macros, \
+and set LED colours. Includes the desktop app and the command-line tool."""
+section = "utils"
+priority = "optional"
+depends = "$auto"
+maintainer-scripts = "../../packaging/linux/debian/"
+assets = [
+    ["target/release/macropad-remapper-gui", "usr/bin/", "755"],
+    ["target/release/macropad-remapper", "usr/bin/", "755"],
+    ["../../packaging/linux/macropad-remapper.desktop", "usr/share/applications/", "644"],
+    ["../../packaging/icons/icon-256.png", "usr/share/icons/hicolor/256x256/apps/macropad-remapper.png", "644"],
+    ["../../packaging/icons/icon-128.png", "usr/share/icons/hicolor/128x128/apps/macropad-remapper.png", "644"],
+    ["../../packaging/icons/icon-64.png", "usr/share/icons/hicolor/64x64/apps/macropad-remapper.png", "644"],
+    ["../../packaging/99-macropad-remapper.rules", "usr/lib/udev/rules.d/", "644"],
+    ["../../README.md", "usr/share/doc/macropad-remapper/", "644"],
+    ["../../docs/user-guide.md", "usr/share/doc/macropad-remapper/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "macropad-remapper"
+license = "MIT OR Apache-2.0"
+summary = "Configurator for MINI_KEYBOARD macropads"
+post_install_script = "udevadm control --reload-rules >/dev/null 2>&1 || :; udevadm trigger --subsystem-match=hidraw >/dev/null 2>&1 || :"
+assets = [
+    { source = "target/release/macropad-remapper-gui", dest = "/usr/bin/macropad-remapper-gui", mode = "755" },
+    { source = "target/release/macropad-remapper", dest = "/usr/bin/macropad-remapper", mode = "755" },
+    { source = "../../packaging/linux/macropad-remapper.desktop", dest = "/usr/share/applications/macropad-remapper.desktop", mode = "644" },
+    { source = "../../packaging/icons/icon-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/macropad-remapper.png", mode = "644" },
+    { source = "../../packaging/icons/icon-128.png", dest = "/usr/share/icons/hicolor/128x128/apps/macropad-remapper.png", mode = "644" },
+    { source = "../../packaging/icons/icon-64.png", dest = "/usr/share/icons/hicolor/64x64/apps/macropad-remapper.png", mode = "644" },
+    { source = "../../packaging/99-macropad-remapper.rules", dest = "/usr/lib/udev/rules.d/99-macropad-remapper.rules", mode = "644" },
+    { source = "../../README.md", dest = "/usr/share/doc/macropad-remapper/README.md", mode = "644", doc = true },
+    { source = "../../docs/user-guide.md", dest = "/usr/share/doc/macropad-remapper/user-guide.md", mode = "644", doc = true },
+]

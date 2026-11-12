@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Macropad Remapper
+GenericName=Macropad configurator
+Comment=Remap the keys, knobs and LEDs of MINI_KEYBOARD macropads
+Exec=macropad-remapper-gui
+Icon=macropad-remapper
+Terminal=false
+Categories=Utility;Settings;HardwareSettings;
+Keywords=macropad;keyboard;keypad;remap;macro;knob;

@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+# Apply the udev rule so the keypad is usable without sudo (replug if already connected).
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=hidraw || true
+fi
+#DEBHELPER#
