@@ -117,6 +117,8 @@ pub fn keycap(ui: &mut Ui, size: Vec2, index: &str, text: &str, led: Option<Colo
 
 /// Width reserved for one knob widget.
 pub const KNOB_WIDTH: f32 = 184.0;
+/// Height reserved for one knob widget.
+pub const KNOB_HEIGHT: f32 = 136.0;
 
 /// Which part of a knob was clicked.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -129,7 +131,7 @@ pub enum KnobPart {
 /// A rotary knob drawn in one fixed-size rect with three hit zones:
 /// ↺ (turn left), the knob itself (press), ↻ (turn right). Returns the clicked part.
 pub fn knob(ui: &mut Ui, label: &str, selected: Option<KnobPart>, texts: [&str; 3]) -> Option<KnobPart> {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(KNOB_WIDTH, 136.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(KNOB_WIDTH, KNOB_HEIGHT), Sense::hover());
     let id = ui.scope_id().with(("knob", label));
     let c = Pos2::new(rect.center().x, rect.top() + 46.0);
     let zones = [

@@ -2,6 +2,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod layout;
 mod theme;
 mod widgets;
 mod worker;
@@ -576,98 +577,170 @@ impl App {
 
         let keys = self.keys();
         let knobs = (self.slot_count() - keys) / 3;
-        let cols = match keys {
-            0..=4 => keys.max(1),
-            5..=9 => 3,
-            10..=16 => 4,
-            _ => 5,
-        };
-        let gap = 14.0;
-        let knob_gap = 12.0;
-        let knob_row_w = knobs as f32 * widgets::KNOB_WIDTH + knobs.saturating_sub(1) as f32 * knob_gap;
-        // Keys stretch so the grid is as wide as the knob row (min 104 px).
-        let cap_w = ((knob_row_w - (cols as f32 - 1.0) * gap) / cols as f32).clamp(104.0, 150.0);
-        let cap = egui::vec2(cap_w, 84.0);
-        let grid_w = cols as f32 * cap.x + (cols as f32 - 1.0) * gap;
-        let inner_w = grid_w.max(knob_row_w);
-        let plate_w = inner_w + 2.0 * 28.0;
-        ui.horizontal(|ui| {
-            ui.add_space(((ui.available_width() - plate_w) / 2.0).max(0.0));
-            ui.vertical(|ui| self.device_plate(ui, keys, knobs, cols, cap, gap, knob_gap, inner_w));
-        });
+        let lay = layout::pad_layout(keys, knobs);
+        // Centre the plate horizontally in the available width (keys shrink to fit).
+        let avail = ui.available_width();
+        let geo = PlateGeometry::new(keys, knobs, lay, avail);
+        let (row, _) = ui.allocate_exact_size(egui::vec2(avail.max(geo.size.x), geo.size.y), egui::Sense::hover());
+        let plate = egui::Rect::from_min_size(
+            egui::pos2(row.left() + ((row.width() - geo.size.x) / 2.0).max(0.0), row.top()),
+            geo.size,
+        );
+        ui.painter().rect(plate, 22, DEVICE, egui::Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
+
+        for k in 0..knobs {
+            let r = geo.knob_rect(k).translate(plate.min.to_vec2());
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
+            self.draw_knob(&mut child, keys, k);
+        }
+        for i in 0..keys {
+            let r = geo.key_rect(i).translate(plate.min.to_vec2());
+            let text = action_label(&self.actions[self.layer][i]);
+            let led = self.led_color(i);
+            let selected = self.slot == i;
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
+            let clicked = keycap(&mut child, r.size(), &(i + 1).to_string(), &text, led, selected).clicked();
+            if clicked {
+                self.select(i);
+            }
+        }
+
         ui.add_space(8.0);
         ui.vertical_centered(|ui| {
+            let note = if lay.known { "" } else { " Layout guessed from the key count; your pad may be arranged differently." };
             ui.label(
-                RichText::new("Click a key, or a knob's ↺ ● ↻ to edit what turning/pressing it does. Knob order not yet verified on hardware.")
-                    .small()
-                    .color(MUTED),
+                RichText::new(format!(
+                    "Click a key, or a knob's ↺ ● ↻ to edit what turning/pressing it does. Knob order not yet verified on hardware.{note}"
+                ))
+                .small()
+                .color(MUTED),
             );
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn device_plate(
-        &mut self,
-        ui: &mut egui::Ui,
-        keys: usize,
-        knobs: usize,
-        cols: usize,
-        cap: egui::Vec2,
-        gap: f32,
-        knob_gap: f32,
-        inner_w: f32,
-    ) {
-        egui::Frame::new()
-            .fill(DEVICE)
-            .stroke(egui::Stroke::new(1.0, BORDER))
-            .corner_radius(22)
-            .inner_margin(28)
-            .show(ui, |ui| {
-                ui.set_width(inner_w);
-                // Knobs across the top, like the real board
-                if knobs > 0 {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = knob_gap;
-                        for k in 0..knobs {
-                            let base = keys + k * 3;
-                            let selected = (self.slot >= base && self.slot < base + 3).then(|| {
-                                [KnobPart::Left, KnobPart::Press, KnobPart::Right][self.slot - base]
-                            });
-                            let short = |a: &Action| {
-                                let s = action_label(a);
-                                if s.chars().count() > 9 { s.chars().take(8).collect::<String>() + "…" } else { s }
-                            };
-                            let acts = &self.actions[self.layer];
-                            let texts = [short(&acts[base]), short(&acts[base + 1]), short(&acts[base + 2])];
-                            let texts = [texts[0].as_str(), texts[1].as_str(), texts[2].as_str()];
-                            if let Some(part) = knob(ui, &format!("KNOB {}", k + 1), selected, texts) {
-                                let off = match part {
-                                    KnobPart::Left => 0,
-                                    KnobPart::Press => 1,
-                                    KnobPart::Right => 2,
-                                };
-                                self.select(base + off);
-                            }
-                        }
-                    });
-                    ui.add_space(18.0);
-                }
-                // Key grid
-                egui::Grid::new("keys").spacing([gap, gap]).show(ui, |ui| {
-                    for i in 0..keys {
-                        let text = action_label(&self.actions[self.layer][i]);
-                        let led = self.led_color(i);
-                        if keycap(ui, cap, &(i + 1).to_string(), &text, led, self.slot == i).clicked() {
-                            self.select(i);
-                        }
-                        if (i + 1).is_multiple_of(cols) {
-                            ui.end_row();
-                        }
-                    }
-                });
-            });
+    /// One knob widget; clicking a part selects its slot.
+    fn draw_knob(&mut self, ui: &mut egui::Ui, keys: usize, k: usize) {
+        let base = keys + k * 3;
+        let selected = (self.slot >= base && self.slot < base + 3)
+            .then(|| [KnobPart::Left, KnobPart::Press, KnobPart::Right][self.slot - base]);
+        let short = |a: &Action| {
+            let s = action_label(a);
+            if s.chars().count() > 9 { s.chars().take(8).collect::<String>() + "…" } else { s }
+        };
+        let acts = &self.actions[self.layer];
+        let texts = [short(&acts[base]), short(&acts[base + 1]), short(&acts[base + 2])];
+        let texts = [texts[0].as_str(), texts[1].as_str(), texts[2].as_str()];
+        if let Some(part) = knob(ui, &format!("KNOB {}", k + 1), selected, texts) {
+            let off = match part {
+                KnobPart::Left => 0,
+                KnobPart::Press => 1,
+                KnobPart::Right => 2,
+            };
+            self.select(base + off);
+        }
+    }
+}
+
+/// Exact positions (relative to the plate's top-left) of every key and knob.
+struct PlateGeometry {
+    size: egui::Vec2,
+    cap: egui::Vec2,
+    grid_origin: egui::Pos2,
+    knob_origin: egui::Pos2,
+    cols: usize,
+    knobs: usize,
+    knob_side: layout::KnobSide,
+}
+
+const PLATE_MARGIN: f32 = 28.0;
+const KEY_GAP: f32 = 14.0;
+const KNOB_GAP: f32 = 12.0;
+const KEY_HEIGHT: f32 = 84.0;
+
+impl PlateGeometry {
+    fn new(keys: usize, knobs: usize, lay: layout::PadLayout, max_width: f32) -> Self {
+        use layout::KnobSide;
+        let cols = lay.cols.max(1);
+        let rows = keys.div_ceil(cols).max(1);
+        let (kw, kh) = (widgets::KNOB_WIDTH, widgets::KNOB_HEIGHT);
+        let span = |n: usize, w: f32, gap: f32| n as f32 * w + n.saturating_sub(1) as f32 * gap;
+
+        let (cap_w, knob_w, knob_h) = match (lay.knob_side, knobs) {
+            (_, 0) => (120.0, 0.0, 0.0),
+            (KnobSide::Top, n) => {
+                let row_w = span(n, kw, KNOB_GAP);
+                // Keys stretch so the grid roughly matches the knob row.
+                (((row_w - (cols as f32 - 1.0) * KEY_GAP) / cols as f32).clamp(104.0, 150.0), row_w, kh)
+            }
+            (KnobSide::Right, n) => {
+                let kc = layout::right_cluster_cols(n);
+                (112.0, span(kc, kw, KNOB_GAP), span(n.div_ceil(kc), kh, 8.0))
+            }
+        };
+        // Shrink keys (not below 72 px) when the plate would be wider than the panel.
+        let beside = if lay.knob_side == KnobSide::Right && knobs > 0 { 24.0 + knob_w } else { 0.0 };
+        let fit_w = (max_width - 2.0 * PLATE_MARGIN - beside - (cols as f32 - 1.0) * KEY_GAP) / cols as f32;
+        let cap_w = cap_w.min(fit_w).max(72.0);
+        let cap = egui::vec2(cap_w, KEY_HEIGHT);
+        let grid = egui::vec2(span(cols, cap.x, KEY_GAP), span(rows, cap.y, KEY_GAP));
+        let m = PLATE_MARGIN;
+
+        let (inner, grid_origin, knob_origin) = match (lay.knob_side, knobs) {
+            (_, 0) => (grid, egui::pos2(m, m), egui::pos2(m, m)),
+            (KnobSide::Top, _) => {
+                let w = grid.x.max(knob_w);
+                let inner = egui::vec2(w, knob_h + 18.0 + grid.y);
+                (
+                    inner,
+                    egui::pos2(m + (w - grid.x) / 2.0, m + knob_h + 18.0),
+                    egui::pos2(m + (w - knob_w) / 2.0, m),
+                )
+            }
+            (KnobSide::Right, _) => {
+                let h = grid.y.max(knob_h);
+                let inner = egui::vec2(grid.x + 24.0 + knob_w, h);
+                (
+                    inner,
+                    egui::pos2(m, m + (h - grid.y) / 2.0),
+                    egui::pos2(m + grid.x + 24.0, m + (h - knob_h) / 2.0),
+                )
+            }
+        };
+        PlateGeometry {
+            size: inner + egui::vec2(2.0 * m, 2.0 * m),
+            cap,
+            grid_origin,
+            knob_origin,
+            cols,
+            knobs,
+            knob_side: lay.knob_side,
+        }
     }
 
+    fn key_rect(&self, i: usize) -> egui::Rect {
+        let (r, c) = (i / self.cols, i % self.cols);
+        let min = self.grid_origin + egui::vec2(c as f32 * (self.cap.x + KEY_GAP), r as f32 * (self.cap.y + KEY_GAP));
+        egui::Rect::from_min_size(min, self.cap)
+    }
+
+    fn knob_rect(&self, k: usize) -> egui::Rect {
+        let (kw, kh) = (widgets::KNOB_WIDTH, widgets::KNOB_HEIGHT);
+        let min = match self.knob_side {
+            layout::KnobSide::Top => self.knob_origin + egui::vec2(k as f32 * (kw + KNOB_GAP), 0.0),
+            layout::KnobSide::Right => {
+                let kc = layout::right_cluster_cols(self.knobs);
+                let (r, c) = (k / kc, k % kc);
+                // A last row with fewer knobs is centred under the full rows.
+                let in_row = (self.knobs - r * kc).min(kc);
+                let row_offset = (kc - in_row) as f32 * (kw + KNOB_GAP) / 2.0;
+                self.knob_origin + egui::vec2(row_offset + c as f32 * (kw + KNOB_GAP), r as f32 * (kh + 8.0))
+            }
+        };
+        egui::Rect::from_min_size(min, egui::vec2(kw, kh))
+    }
+}
+
+impl App {
     fn inspector(&mut self, ui: &mut egui::Ui) {
         let (layer, slot) = (self.layer, self.slot);
         if slot >= self.slot_count() {

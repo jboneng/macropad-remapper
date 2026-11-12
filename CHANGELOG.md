@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The app draws known keypad models the way they really look.**
+  - Layouts come from the vendor tool's own layout pictures: 3 keys + 1 knob, 5 keys,
+    6 keys, 6 keys + 2 knobs, 9 keys + 3 knobs, 12 keys + 2 knobs and 15 keys + 3 knobs.
+  - Pads with knobs beside the keys show them stacked on the right.
+  - 16 keys + 3 knobs (the tested 514C:8850) stays 4 × 4 with the knobs on top.
+- **Unknown sizes get more natural grids.** For example 5 keys in one row, 10 as 5 × 2 and
+  15 as 5 × 3, instead of always 3 or 4 columns. A note says the layout is a guess.
+- **The keypad is centred.** Knobs and keys are centred on each other, and keys shrink to
+  fit narrow windows instead of running off the edge.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
