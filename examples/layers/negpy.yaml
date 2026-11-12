@@ -1,0 +1,66 @@
+# Layer file: NegPy (film negative converter / darkroom printing simulator).
+# Load it into any layer:
+#   macropad-remapper upload negpy.yaml --layer 1
+# or in the app: pick a layer, then "Load into layer…".
+#
+# Layout on a 16-key, 3-knob pad: each "up" key sits directly above its "down" key.
+#
+#   ┌───────────┬───────────┬───────────┬────────────┐
+#   │ Temp +    │ Cyan +    │ Magenta + │ Yellow +   │
+#   │ Temp −    │ Cyan −    │ Magenta − │ Yellow −   │
+#   │ Grade +   │ Shadow +  │ Print +   │ Highlight +│
+#   │ Grade −   │ Shadow −  │ Print −   │ Highlight −│
+#   └───────────┴───────────┴───────────┴────────────┘
+#   Knob 1: Preflash   Knob 2: Diffusion   Knob 3: Contrast mask
+#   (knob presses are left unchanged)
+#
+# Keys sent:
+#   NegPy default shortcuts: T/G temperature, E/D magenta, R/F yellow,
+#   W/S ISO-R grade, Q/A print density.
+#
+#   These NegPy actions have no default key. Bind them ONCE in NegPy with
+#   "?" → Customize, by searching the action and pressing the pad key/knob:
+#     F13 Cyan up               F14 Cyan down
+#     F15 Shadows density up    F16 Shadows density down
+#     F17 Highlights density up F18 Highlights density down
+#     F19 Contrast Mask up      F20 Contrast Mask down
+#     F21 Diffusion up          F22 Diffusion down
+#     F23 Preflash up           F24 Preflash down
+#   F13–F24 don't exist on normal keyboards, so they never clash with other apps.
+name: NegPy
+slots:
+  # row 1 — up
+  1: t        # Temperature warmer (up)
+  2: f13      # Cyan up
+  3: e        # Magenta up
+  4: r        # Yellow up
+  # row 2 — down
+  5: g        # Temperature cooler (down)
+  6: f14      # Cyan down
+  7: d        # Magenta down
+  8: f        # Yellow down
+  # row 3 — up
+  9: w        # ISO-R grade up
+  10: f15     # Shadows density up
+  11: q       # Print density up
+  12: f17     # Highlights density up
+  # row 4 — down
+  13: s       # ISO-R grade down
+  14: f16     # Shadows density down
+  15: a       # Print density down
+  16: f18     # Highlights density down
+  # knob 1 — Preflash
+  17: f24     # turn one way: Preflash down
+  19: f23     # turn other way: Preflash up
+  # knob 2 — Diffusion
+  20: f22     # Diffusion down
+  22: f21     # Diffusion up
+  # knob 3 — Contrast mask
+  23: f19     # Contrast Mask up
+  25: f20     # Contrast Mask down
+leds:
+  mode: 3
+  colors: ["#ff8030", "#00ffff", "#ff00ff", "#ffff30",
+           "#ff8030", "#00ffff", "#ff00ff", "#ffff30",
+           "#ffffff", "#5bb8ff", "#8a92a6", "#ffd25b",
+           "#ffffff", "#5bb8ff", "#8a92a6", "#ffd25b"]

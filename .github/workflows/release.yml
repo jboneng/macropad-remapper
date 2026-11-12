@@ -45,6 +45,7 @@ jobs:
           mkdir -p stage dist
           cp target/release/macropad-remapper-gui.exe target/release/macropad-remapper.exe stage/
           cp README.md CHANGELOG.md docs/user-guide.md LICENSE-MIT LICENSE-APACHE examples/example-profile.yaml stage/
+          cp -R examples stage/examples
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
@@ -57,7 +58,7 @@ jobs:
         run: |
           $n = "macropad-remapper-$env:V-windows-x64-portable"
           New-Item -ItemType Directory $n | Out-Null
-          Copy-Item stage\* $n
+          Copy-Item stage\* $n -Recurse
           Compress-Archive -Path $n -DestinationPath "dist\$n.zip"
       - uses: actions/upload-artifact@v7
         with:
@@ -103,12 +104,14 @@ jobs:
           cp -R "$APP" dmg/
           ln -s /Applications dmg/Applications
           cp README.md docs/user-guide.md dmg/
+          cp -R examples dmg/examples
           hdiutil create -volname "Macropad Remapper $V" -srcfolder dmg -ov -format UDZO \
             "dist/macropad-remapper-$V-macos-universal.dmg"
           P="macropad-remapper-$V-macos-universal-portable"
           mkdir "$P"
           cp -R "$APP" "$P/"
           cp README.md CHANGELOG.md docs/user-guide.md LICENSE-MIT LICENSE-APACHE examples/example-profile.yaml "$P/"
+          cp -R examples "$P/examples"
           ditto -c -k --keepParent "$P" "dist/$P.zip"
       - uses: actions/upload-artifact@v7
         with:
@@ -146,6 +149,7 @@ jobs:
           cp packaging/99-macropad-remapper.rules packaging/linux/macropad-remapper.desktop "$P/"
           cp packaging/icons/icon-256.png "$P/macropad-remapper.png"
           cp README.md CHANGELOG.md docs/user-guide.md LICENSE-MIT LICENSE-APACHE examples/example-profile.yaml "$P/"
+          cp -R examples "$P/examples"
           zip -r -y "dist/$P.zip" "$P"
       - uses: actions/upload-artifact@v7
         with:

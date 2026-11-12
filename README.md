@@ -30,6 +30,7 @@ the connect step, try [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-ke
 - **LEDs:** the effect mode per layer and a colour per key.
 - **Layers and knobs:** all of the above for each of the 3 layers, and for knob
   turn-left / press / turn-right.
+- **Per-app layer files:** save a layer as e.g. `lightroom.yaml` and load it into any layer, or combine several in one setup file. See [examples/layers](examples/layers).
 
 ## Quick start
 

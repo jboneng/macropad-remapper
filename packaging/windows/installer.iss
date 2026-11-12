@@ -52,6 +52,7 @@ Source: "{#SourceDir}\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE-MIT"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\example-profile.yaml"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\examples\*"; DestDir: "{app}\examples"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Macropad Remapper"; Filename: "{app}\macropad-remapper-gui.exe"

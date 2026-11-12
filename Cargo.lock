@@ -1902,7 +1902,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "macropad-remapper"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1912,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "macropad-remapper-device"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "hidapi",
  "macropad-remapper-proto",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "macropad-remapper-gui"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "eframe",
  "macropad-remapper-device",
@@ -1932,7 +1932,7 @@ dependencies = [
 
 [[package]]
 name = "macropad-remapper-proto"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_yaml",

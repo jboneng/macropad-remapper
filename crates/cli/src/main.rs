@@ -3,10 +3,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use macropad_remapper_device::{list_devices, open_first, Keypad, SimulatedKeypad, Transport};
+use macropad_remapper_device::{list_devices, open_first, read_profile_file, Keypad, SimulatedKeypad, Transport};
 use macropad_remapper_proto::frame::{format_color, parse_color, Frame, LedConfig};
 use macropad_remapper_proto::keys;
-use macropad_remapper_proto::profile::{LayerSpec, LedSpec, Profile};
+use macropad_remapper_proto::profile::{LayerSpec, LedSpec, Profile, ProfileDoc};
 
 #[derive(Parser)]
 #[command(name = "macropad-remapper", version, about = "Open-source configurator for MINI_KEYBOARD macropads (USB 1189/514C:88xx)")]
@@ -27,15 +27,25 @@ enum Cmd {
     List,
     /// Handshake and show the key/knob count and protocol generation.
     Info,
-    /// Read the whole configuration from the keypad into a YAML profile.
+    /// Read the keypad's configuration into a YAML profile (or one layer into a layer file).
     Dump {
         /// Output file (stdout if omitted).
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Export only this layer (1..3) as a layer file that can be loaded into any layer.
+        #[arg(long)]
+        layer: Option<u8>,
+        /// Name to store in an exported layer file, e.g. "Lightroom".
+        #[arg(long, requires = "layer")]
+        name: Option<String>,
     },
-    /// Write a YAML profile to the keypad (only changed slots are written).
+    /// Write a YAML profile or layer file to the keypad (only changed slots are written).
     Upload {
+        /// A full profile, or a layer file (then --layer chooses where it goes).
         profile: PathBuf,
+        /// Target layer (1..3) for a layer file.
+        #[arg(long)]
+        layer: Option<u8>,
         /// Show the frames that would be sent without changing the keypad.
         #[arg(long)]
         dry_run: bool,
@@ -128,9 +138,18 @@ fn run(cli: Cli) -> Result<()> {
             println!("generation: {}{}", h.generation, if h.is_legacy() { " (legacy, read-only)" } else { "" });
             println!("slots:      1..={} (keys first, then 3 per knob)", h.slot_count());
         }
-        Cmd::Dump { output } => {
+        Cmd::Dump { output, layer, name } => {
             let mut kp = connect(&cli, false)?;
-            let yaml = kp.read_image()?.to_profile().to_yaml();
+            let image = kp.read_image()?;
+            let yaml = match layer {
+                None => image.to_profile().to_yaml(),
+                Some(l) => {
+                    let idx = layer_index(*l)?;
+                    let mut spec = image.layer_spec(idx).context("layer not reported by the keypad")?;
+                    spec.name = name.clone();
+                    spec.to_yaml()
+                }
+            };
             match output {
                 Some(p) => {
                     std::fs::write(p, yaml).with_context(|| format!("writing {}", p.display()))?;
@@ -139,8 +158,8 @@ fn run(cli: Cli) -> Result<()> {
                 None => print!("{yaml}"),
             }
         }
-        Cmd::Upload { profile, dry_run, no_backup } => {
-            let profile = load_profile(profile)?;
+        Cmd::Upload { profile, layer, dry_run, no_backup } => {
+            let profile = load_profile(profile, *layer)?;
             let mut kp = connect(&cli, *dry_run)?;
             let image = if *dry_run || *no_backup {
                 kp.read_image()?
@@ -201,9 +220,29 @@ fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-fn load_profile(path: &Path) -> Result<Profile> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let p = Profile::from_yaml(&text).with_context(|| format!("parsing {}", path.display()))?;
-    p.validate()?;
-    Ok(p)
+fn layer_index(layer: u8) -> Result<usize> {
+    if !(1..=3).contains(&layer) {
+        bail!("layer must be 1..3");
+    }
+    Ok(layer as usize - 1)
+}
+
+/// Load a full profile, or a layer file placed into `layer`.
+fn load_profile(path: &Path, layer: Option<u8>) -> Result<Profile> {
+    match (read_profile_file(path)?, layer) {
+        (ProfileDoc::Full(p), None) => Ok(p),
+        (ProfileDoc::Full(_), Some(_)) => {
+            bail!("{} is a full profile (it has `layers:`); --layer is only for layer files", path.display())
+        }
+        (ProfileDoc::Layer(_), None) => bail!(
+            "{} is a layer file; choose where it goes with --layer 1, 2 or 3",
+            path.display()
+        ),
+        (ProfileDoc::Layer(l), Some(n)) => {
+            let name = l.name.clone();
+            let p = Profile::for_layer(layer_index(n)?, l)?;
+            println!("loading {} into layer {n}", name.as_deref().unwrap_or("layer file"));
+            Ok(p)
+        }
+    }
 }

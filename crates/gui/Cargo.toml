@@ -50,6 +50,11 @@ assets = [
     ["../../packaging/99-macropad-remapper.rules", "usr/lib/udev/rules.d/", "644"],
     ["../../README.md", "usr/share/doc/macropad-remapper/", "644"],
     ["../../docs/user-guide.md", "usr/share/doc/macropad-remapper/", "644"],
+    ["../../examples/setup.yaml", "usr/share/doc/macropad-remapper/examples/", "644"],
+    ["../../examples/example-profile.yaml", "usr/share/doc/macropad-remapper/examples/", "644"],
+    ["../../examples/layers/negpy.yaml", "usr/share/doc/macropad-remapper/examples/layers/", "644"],
+    ["../../examples/layers/lightroom.yaml", "usr/share/doc/macropad-remapper/examples/layers/", "644"],
+    ["../../examples/layers/media.yaml", "usr/share/doc/macropad-remapper/examples/layers/", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -67,4 +72,9 @@ assets = [
     { source = "../../packaging/99-macropad-remapper.rules", dest = "/usr/lib/udev/rules.d/99-macropad-remapper.rules", mode = "644" },
     { source = "../../README.md", dest = "/usr/share/doc/macropad-remapper/README.md", mode = "644", doc = true },
     { source = "../../docs/user-guide.md", dest = "/usr/share/doc/macropad-remapper/user-guide.md", mode = "644", doc = true },
+    { source = "../../examples/setup.yaml", dest = "/usr/share/doc/macropad-remapper/examples/setup.yaml", mode = "644", doc = true },
+    { source = "../../examples/example-profile.yaml", dest = "/usr/share/doc/macropad-remapper/examples/example-profile.yaml", mode = "644", doc = true },
+    { source = "../../examples/layers/negpy.yaml", dest = "/usr/share/doc/macropad-remapper/examples/layers/negpy.yaml", mode = "644", doc = true },
+    { source = "../../examples/layers/lightroom.yaml", dest = "/usr/share/doc/macropad-remapper/examples/layers/lightroom.yaml", mode = "644", doc = true },
+    { source = "../../examples/layers/media.yaml", dest = "/usr/share/doc/macropad-remapper/examples/layers/media.yaml", mode = "644", doc = true },
 ]

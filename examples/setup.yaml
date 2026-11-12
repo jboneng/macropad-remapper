@@ -1,0 +1,9 @@
+# A setup combines layer files. Swap the lines to put them on different layers;
+# another person can use the same layer files in a different order.
+#   macropad-remapper upload setup.yaml
+layers:
+  - file: layers/negpy.yaml            # layer 1
+  - file: layers/lightroom.yaml        # layer 2
+  - file: layers/media.yaml            # layer 3
+    slots:                             # inline slots override the layer file
+      16: f13

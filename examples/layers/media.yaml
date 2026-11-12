@@ -1,0 +1,14 @@
+# Layer file: media and volume controls. Load into any layer with --layer N.
+name: Media
+slots:
+  1: { media: prev }
+  2: { media: play }
+  3: { media: next }
+  4: { media: mute }
+  5: { media: voldown }
+  6: { media: volup }
+  7: { media: calculator }
+  8: { media: wwwhome }
+  17: { media: voldown }   # knob 1 ↺
+  18: { media: mute }      # knob 1 ●
+  19: { media: volup }     # knob 1 ↻

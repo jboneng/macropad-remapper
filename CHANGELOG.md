@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-12
+
+### Added
+- **Per-app layer files.** A YAML file can now describe a single layer (e.g. `lightroom.yaml`
+  with an optional `name:`) and be loaded into *any* layer, so one person can put Lightroom
+  on layer 2 and another on layer 1.
+  - **App:** **Load into layer N…** and **Save layer N…** next to the layer buttons. A
+    **Name** field labels the layer (e.g. **2 · Lightroom**). **Open** also accepts layer
+    files and setup files.
+  - **CLI:**
+    - `upload <layer-file> --layer N` loads a layer file into a layer.
+    - `dump --layer N --name <name>` exports one layer.
+  - **Setup files** combine layer files with `layers: [ { file: lightroom.yaml }, … ]`.
+    Paths are relative to the setup, and inline `slots`/`leds`/`name` override the file.
+  - **Examples:**
+    - `examples/layers/negpy.yaml` covers NegPy: temperature, CMY filtration, ISO-R grade,
+      and shadow, print and highlight density on keys; preflash, diffusion and contrast mask
+      on the knobs. NegPy actions without a default key use F13–F24.
+    - `examples/layers/lightroom.yaml` covers Lightroom Classic shortcuts.
+    - `examples/layers/media.yaml` covers media and volume keys.
+    - `examples/setup.yaml` combines them.
+
+### Changed
+- **Misspelled field names are rejected.** For example `slot:` instead of `slots:` is now
+  an error instead of being silently ignored.
+- **Loading a profile in the app is all-or-nothing.** A bad slot no longer leaves the
+  editor half-loaded.
+
 ## [0.2.1] - 2026-11-12
 
 ### Fixed
@@ -82,5 +110,6 @@ Initial version, built from static analysis of the vendor tool `MINI_KEYBOARD.ex
 - **Packaging:** Linux udev rule, cross-platform CI, example profile, and MIT/Apache-2.0
   licences.
 
+[0.3.0]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.3.0
 [0.2.1]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.2.0

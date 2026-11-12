@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::ffi::CString;
 
 use macropad_remapper_proto::frame::{self, Frame, Handshake, LedConfig, Reply, REPLY_LEN};
-use macropad_remapper_proto::profile::{ActionSpec, LayerSpec, LedSpec, Profile};
+use macropad_remapper_proto::profile::{ActionSpec, LayerSpec, LedSpec, Profile, ProfileDoc};
 use macropad_remapper_proto::record::{Action, Record};
 use macropad_remapper_proto::{LAYERS, PRODUCT_IDS, VENDOR_IDS};
 
@@ -27,6 +27,30 @@ pub enum Error {
     NoSuchSlot { layer: usize, slot: u8, available: usize },
     #[error(transparent)]
     Proto(#[from] macropad_remapper_proto::Error),
+    #[error("{path}: {error}")]
+    Io { path: String, error: std::io::Error },
+    #[error("{path}: {error}")]
+    File { path: String, error: macropad_remapper_proto::Error },
+}
+
+/// Read a YAML file: a full profile (with any `file:` includes resolved relative to
+/// the profile's folder) or a single-layer file.
+pub fn read_profile_file(path: &std::path::Path) -> Result<ProfileDoc> {
+    let shown = path.display().to_string();
+    let text = std::fs::read_to_string(path).map_err(|error| Error::Io { path: shown.clone(), error })?;
+    let file_err = |error| Error::File { path: shown.clone(), error };
+    match ProfileDoc::from_yaml(&text).map_err(file_err)? {
+        ProfileDoc::Full(mut p) => {
+            let dir = path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+            p.resolve_includes(|inc| std::fs::read_to_string(dir.join(inc))).map_err(file_err)?;
+            p.validate().map_err(file_err)?;
+            Ok(ProfileDoc::Full(p))
+        }
+        ProfileDoc::Layer(l) => {
+            l.validate().map_err(file_err)?;
+            Ok(ProfileDoc::Layer(l))
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -271,9 +295,15 @@ impl DeviceImage {
                         .map(|(i, r)| ((i + 1) as u8, ActionSpec::from_action(&Action::decode(r))))
                         .collect(),
                     leds: Some(LedSpec::from_config(leds)),
+                    ..Default::default()
                 })
                 .collect(),
         }
+    }
+
+    /// One layer (0-based) as a standalone layer file.
+    pub fn layer_spec(&self, layer: usize) -> Option<LayerSpec> {
+        self.to_profile().layers.into_iter().nth(layer)
     }
 }
 
@@ -592,6 +622,31 @@ mod tests {
         let profile = Profile::from_yaml("layers:\n  - slots: { 1: a }\n  - slots: { 1: none }\n").unwrap();
         let rep = k.apply(&profile, &image).unwrap();
         assert_eq!(rep.frames.len(), 2, "one record + one commit");
+    }
+
+    #[test]
+    fn layer_files_from_disk_in_any_order() {
+        let dir = std::env::temp_dir().join(format!("macropad-remapper-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("layers")).unwrap();
+        std::fs::write(dir.join("layers/lr.yaml"), "name: Lightroom\nslots: { 1: p, 2: x }\n").unwrap();
+        std::fs::write(dir.join("layers/np.yaml"), "name: NegPy\nslots: { 1: ctrl-z }\n").unwrap();
+        std::fs::write(dir.join("a.yaml"), "layers:\n  - file: layers/np.yaml\n  - file: layers/lr.yaml\n").unwrap();
+        std::fs::write(dir.join("b.yaml"), "layers:\n  - file: layers/lr.yaml\n  - file: layers/np.yaml\n").unwrap();
+
+        let ProfileDoc::Full(a) = read_profile_file(&dir.join("a.yaml")).unwrap() else { panic!() };
+        let ProfileDoc::Full(b) = read_profile_file(&dir.join("b.yaml")).unwrap() else { panic!() };
+        assert_eq!(a.layers[0], b.layers[1]);
+        assert_eq!(a.layers[1].name.as_deref(), Some("Lightroom"));
+        assert!(matches!(read_profile_file(&dir.join("layers/lr.yaml")).unwrap(), ProfileDoc::Layer(_)));
+
+        // Uploading both setups to the simulator puts the same keys on swapped layers.
+        let mut k = Keypad::connect(sim(), false).unwrap();
+        let image = k.read_image().unwrap();
+        k.apply(&a, &image).unwrap();
+        let img = k.read_image().unwrap();
+        assert_eq!(Action::decode(&img.records[0][0]), Action::Keys(vec![0xF1, 0x1D])); // NegPy: ctrl-z
+        assert_eq!(Action::decode(&img.records[1][0]), Action::Keys(vec![0x13])); // Lightroom: p
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

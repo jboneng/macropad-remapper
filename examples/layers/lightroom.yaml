@@ -1,0 +1,41 @@
+# Layer file: Adobe Lightroom Classic (default Windows shortcuts).
+# Load it into any layer:
+#   macropad-remapper upload lightroom.yaml --layer 2
+# or in the app: pick a layer, then "Load into layer…".
+# On macOS replace ctrl with cmd.
+#
+# Slot numbers for a 16-key, 3-knob pad (keys left-to-right, top-to-bottom;
+# then each knob: turn left, press, turn right). Other pads: see `macropad-remapper info`.
+name: Lightroom
+slots:
+  1: p                 # flag as pick
+  2: x                 # flag as rejected
+  3: u                 # remove flag
+  4: g                 # grid view
+  5: "1"               # 1 star
+  6: "2"               # 2 stars
+  7: "3"               # 3 stars
+  8: "4"               # 4 stars
+  9: "5"               # 5 stars
+  10: "0"              # clear rating
+  11: d                # Develop module
+  12: e                # Loupe view
+  13: backslash        # before / after
+  14: r                # crop tool
+  15: ctrl-shift-c     # copy develop settings
+  16: ctrl-shift-v     # paste develop settings
+  17: left             # knob 1 ↺ previous photo
+  18: z                # knob 1 ● toggle zoom
+  19: right            # knob 1 ↻ next photo
+  20: ctrl-minus       # knob 2 ↺ zoom out
+  21: f                # knob 2 ● full-screen preview
+  22: ctrl-equal       # knob 2 ↻ zoom in
+  23: ctrl-z           # knob 3 ↺ undo
+  24: y                # knob 3 ● side-by-side before/after
+  25: ctrl-y           # knob 3 ↻ redo
+leds:
+  mode: 1
+  colors: ["#3ddc97", "#ff5d73", "#8a92a6", "#5bb8ff",
+           "#ffd25b", "#ffd25b", "#ffd25b", "#ffd25b",
+           "#ffd25b", "#8a92a6", "#8b7bff", "#5bb8ff",
+           "#ffffff", "#ff8030", "#00ffff", "#00ffff"]

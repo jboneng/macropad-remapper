@@ -7,10 +7,10 @@ mod widgets;
 mod worker;
 
 use eframe::egui::{self, Color32, RichText};
-use macropad_remapper_device::DeviceImage;
+use macropad_remapper_device::{read_profile_file, DeviceImage};
 use macropad_remapper_proto::frame::LedConfig;
 use macropad_remapper_proto::keys;
-use macropad_remapper_proto::profile::{ActionSpec, LayerSpec, LedSpec, Profile};
+use macropad_remapper_proto::profile::{ActionSpec, LayerSpec, LedSpec, Profile, ProfileDoc};
 use macropad_remapper_proto::record::{Action, MouseButtons, Step, MAX_STEPS};
 use macropad_remapper_proto::{LAYERS, LED_COUNT};
 use theme::*;
@@ -214,6 +214,8 @@ struct App {
     chord_err: Option<String>,
     recording: bool,
     confirm_write: bool,
+    /// Optional names per layer ("Lightroom"), from layer files; not stored on the keypad.
+    layer_names: Vec<String>,
 }
 
 impl Default for App {
@@ -233,6 +235,7 @@ impl Default for App {
             chord_err: None,
             recording: false,
             confirm_write: false,
+            layer_names: vec![String::new(); LAYERS],
         }
     }
 }
@@ -276,39 +279,96 @@ impl App {
         };
     }
 
-    fn to_profile(&self) -> Profile {
-        Profile {
-            device: self.image.as_ref().map(|i| i.handshake),
-            layers: self
-                .actions
-                .iter()
-                .zip(&self.leds)
-                .map(|(acts, leds)| LayerSpec {
-                    slots: acts.iter().enumerate().map(|(i, a)| ((i + 1) as u8, ActionSpec::from_action(a))).collect(),
-                    leds: Some(LedSpec::from_config(leds)),
-                })
-                .collect(),
+    /// One layer (0-based) as a standalone layer file.
+    fn layer_spec(&self, li: usize) -> LayerSpec {
+        let name = self.layer_names[li].trim();
+        LayerSpec {
+            name: (!name.is_empty()).then(|| name.to_string()),
+            slots: self.actions[li].iter().enumerate().map(|(i, a)| ((i + 1) as u8, ActionSpec::from_action(a))).collect(),
+            leds: Some(LedSpec::from_config(&self.leds[li])),
+            ..Default::default()
         }
     }
 
+    fn to_profile(&self) -> Profile {
+        Profile {
+            device: self.image.as_ref().map(|i| i.handshake),
+            layers: (0..self.actions.len()).map(|li| self.layer_spec(li)).collect(),
+        }
+    }
+
+    /// Apply a profile to the editor (all-or-nothing). Nothing is written to the keypad.
     fn merge_profile(&mut self, p: &Profile) -> Result<(), String> {
         p.validate().map_err(|e| e.to_string())?;
         if self.actions.is_empty() {
             return Err("Connect (or start the simulator) first so the key layout is known.".into());
         }
+        let (mut actions, mut leds, mut names) = (self.actions.clone(), self.leds.clone(), self.layer_names.clone());
         for (li, layer) in p.layers.iter().enumerate() {
             for (&slot, spec) in &layer.slots {
                 let a = spec.to_action().map_err(|e| e.to_string())?;
-                *self.actions[li]
+                *actions[li]
                     .get_mut(slot as usize - 1)
                     .ok_or_else(|| format!("layer {} slot {slot} does not exist on this keypad", li + 1))? = a;
             }
             if let Some(l) = &layer.leds {
-                self.leds[li] = l.to_config().map_err(|e| e.to_string())?;
+                leds[li] = l.to_config().map_err(|e| e.to_string())?;
+            }
+            if let Some(n) = &layer.name {
+                names[li] = n.clone();
             }
         }
+        (self.actions, self.leds, self.layer_names) = (actions, leds, names);
         self.select(self.slot);
         Ok(())
+    }
+
+    /// Load a layer file into the currently selected layer.
+    fn load_layer_file(&mut self) {
+        let Some(path) = rfd::FileDialog::new().add_filter("YAML", &["yaml", "yml"]).pick_file() else { return };
+        let target = self.layer;
+        let res = match read_profile_file(&path).map_err(|e| e.to_string()) {
+            Ok(ProfileDoc::Layer(mut l)) => {
+                if l.name.is_none() {
+                    l.name = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+                }
+                Profile::for_layer(target, l).map_err(|e| e.to_string()).and_then(|p| self.merge_profile(&p))
+            }
+            Ok(ProfileDoc::Full(_)) => Err(format!(
+                "{} is a full profile (all layers). Use Open in the toolbar for it, or save a single layer with \"Save layer…\".",
+                path.display()
+            )),
+            Err(e) => Err(e),
+        };
+        (self.status, self.status_is_error) = match res {
+            Ok(()) => (
+                format!("Loaded {} into layer {} — press Write to apply it", path.display(), target + 1),
+                false,
+            ),
+            Err(e) => (e, true),
+        };
+    }
+
+    /// Save the selected layer as a layer file that can be loaded into any layer.
+    fn save_layer_file(&mut self) {
+        let li = self.layer;
+        let stem = match self.layer_names[li].trim() {
+            "" => format!("layer-{}", li + 1),
+            n => n.to_lowercase().replace(char::is_whitespace, "-"),
+        };
+        let Some(path) =
+            rfd::FileDialog::new().add_filter("YAML", &["yaml", "yml"]).set_file_name(format!("{stem}.yaml")).save_file()
+        else {
+            return;
+        };
+        if self.layer_names[li].trim().is_empty() {
+            self.layer_names[li] = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        }
+        let header = "# Layer file — load it into any layer with \"Load into layer…\" in Macropad Remapper,\n# or: macropad-remapper upload <this file> --layer N\n";
+        (self.status, self.status_is_error) = match std::fs::write(&path, format!("{header}{}", self.layer_spec(li).to_yaml())) {
+            Ok(()) => (format!("Saved layer {} to {}", li + 1, path.display()), false),
+            Err(e) => (e.to_string(), true),
+        };
     }
 
     /// Number of changed key slots + changed LED layers.
@@ -481,10 +541,35 @@ impl App {
         ui.horizontal(|ui| {
             ui.label(RichText::new("LAYER").small().strong().color(MUTED));
             for l in 0..LAYERS {
-                if pill(ui, self.layer == l, &format!("  {}  ", l + 1)).clicked() {
+                let label = match self.layer_names[l].trim() {
+                    "" => format!("  {}  ", l + 1),
+                    n => format!("{} · {n}", l + 1),
+                };
+                if pill(ui, self.layer == l, &label).clicked() {
                     self.layer = l;
                     self.select(self.slot);
                 }
+            }
+        });
+        ui.horizontal(|ui| {
+            let li = self.layer;
+            ui.label(RichText::new("Name").small().color(MUTED));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.layer_names[li])
+                    .hint_text("e.g. Lightroom")
+                    .desired_width(150.0),
+            );
+            if ghost(ui, !self.busy, &format!("📂  Load into layer {}…", li + 1))
+                .on_hover_text("Load a layer file (e.g. lightroom.yaml) into this layer. Press Write to apply.")
+                .clicked()
+            {
+                self.load_layer_file();
+            }
+            if ghost(ui, !self.busy, &format!("💾  Save layer {}…", li + 1))
+                .on_hover_text("Save just this layer as a file you can load into any layer, or share.")
+                .clicked()
+            {
+                self.save_layer_file();
             }
         });
         ui.add_space(10.0);
@@ -866,12 +951,24 @@ impl App {
 
     fn open_profile(&mut self) {
         if let Some(path) = rfd::FileDialog::new().add_filter("YAML", &["yaml", "yml"]).pick_file() {
-            let res = std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|t| Profile::from_yaml(&t).map_err(|e| e.to_string()))
-                .and_then(|p| self.merge_profile(&p));
+            // A full profile (incl. `file:` includes) fills all layers; a layer file goes
+            // into the currently selected layer.
+            let target = self.layer;
+            let res = match read_profile_file(&path).map_err(|e| e.to_string()) {
+                Ok(ProfileDoc::Full(p)) => self.merge_profile(&p).map(|()| String::new()),
+                Ok(ProfileDoc::Layer(mut l)) => {
+                    if l.name.is_none() {
+                        l.name = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+                    }
+                    Profile::for_layer(target, l)
+                        .map_err(|e| e.to_string())
+                        .and_then(|p| self.merge_profile(&p))
+                        .map(|()| format!(" into layer {}", target + 1))
+                }
+                Err(e) => Err(e),
+            };
             (self.status, self.status_is_error) = match res {
-                Ok(()) => (format!("Loaded {} — press Write to apply it", path.display()), false),
+                Ok(into) => (format!("Loaded {}{into} — press Write to apply it", path.display()), false),
                 Err(e) => (e, true),
             };
         }

@@ -136,7 +136,27 @@ is. Changes take effect immediately and survive unplugging.
 
 - **Save** writes everything you see (all layers and LEDs) to a `.yaml` file.
 - **Open** loads a profile into the editor. It is not written to the keypad until you
-  press **Write**, so you can review it first.
+  press **Write**, so you can review it first. Opening a *layer file* puts it into the
+  layer that is currently selected.
+
+### Per-app layers (layer files)
+
+You can keep one file per app, e.g. `lightroom.yaml` or `negpy.yaml`, and put each on
+whichever layer you like. Someone else can use the same files on different layers.
+
+- **Save the current layer as a file.**
+  1. Pick the layer.
+  2. Type a **Name** (e.g. *Lightroom*) next to the layer buttons.
+  3. Click **Save layer N…**.
+- **Put a layer file onto a layer.**
+  1. Pick the target layer.
+  2. Click **Load into layer N…** and choose the file.
+  3. Click **Write**.
+
+  The layer's name appears on its button (e.g. **2 · Lightroom**).
+
+See [Layer files](#layer-files) for the file format, and `examples/layers/` for a
+ready-made Lightroom layer.
 
 ---
 
@@ -188,6 +208,17 @@ wrote 3 key record(s) and 0 LED layer(s)
 ```
 
 If the keypad already matches, it says so and writes nothing.
+
+### Per-app layers
+
+```sh
+# Save layer 3 as a reusable layer file
+macropad-remapper dump --layer 3 --name NegPy -o negpy.yaml
+# Put a layer file onto any layer
+macropad-remapper upload lightroom.yaml --layer 2
+# Or apply a setup that combines several layer files (see Layer files below)
+macropad-remapper upload setup.yaml
+```
 
 ### Other commands
 
@@ -255,6 +286,43 @@ layers:
 - **`raw: …`** appears in dumps for settings the tool doesn't understand yet. Leave it as it
   is; it will be written back unchanged.
 - **The `device:` block** at the top of a dump is informational and ignored on upload.
+- **Misspelled field names** (e.g. `slot:` instead of `slots:`) are reported as errors.
+
+### Layer files
+
+A **layer file** describes a single layer. It has the same fields as one `layers:` entry,
+but at the top level, plus an optional `name`:
+
+```yaml
+# lightroom.yaml
+name: Lightroom
+slots:
+  1: p              # flag as pick
+  2: x              # reject
+  17: left          # knob 1 ↺ previous photo
+  19: right         # knob 1 ↻ next photo
+leds: { mode: 1, colors: ["#3ddc97", "#ff5d73"] }
+```
+
+A layer file isn't tied to any layer. You choose where it goes when you load it:
+`--layer N` on the command line, or **Load into layer N…** in the app.
+
+A **setup** is a full profile that combines layer files with `file:`. Paths are relative to
+the setup file:
+
+```yaml
+# my-setup.yaml                        # a friend's setup.yaml
+layers:                                # layers:
+  - file: layers/negpy.yaml            #   - file: layers/lightroom.yaml
+  - file: layers/lightroom.yaml        #   - file: layers/negpy.yaml
+  - file: layers/media.yaml
+    slots:                             # inline entries override the layer file
+      16: f13
+```
+
+A layer file can't include another file. Loading a layer file only changes the slots it
+lists; save complete layers with **Save layer** / `dump --layer` if you want every slot
+included.
 
 ---
 
