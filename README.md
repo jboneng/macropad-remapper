@@ -4,6 +4,10 @@
 Amazon and elsewhere: the little 3–16 key pads, often with rotary knobs, that ship
 with a closed Windows tool from a Google Drive link.
 
+![Macropad Remapper editing a 16-key, 3-knob pad: NegPy on layer 1, Lightroom on layer 2, media controls on layer 3](docs/images/screenshot.png)
+
+**[⬇ Download for Windows, macOS and Linux](https://github.com/jboneng/macropad-remapper/releases/latest)**
+
 Macropad Remapper replaces that tool. It runs on Windows, Linux and macOS, and gives you:
 
 - **A desktop app** (`macropad-remapper-gui`) that shows your keypad as it looks, with keys,
