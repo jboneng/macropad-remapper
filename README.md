@@ -11,7 +11,8 @@ with a closed Windows tool from a Google Drive link.
 Macropad Remapper replaces that tool. It runs on Windows, Linux and macOS, and gives you:
 
 - **A desktop app** (`macropad-remapper-gui`) that shows your keypad as it looks, with keys,
-  knobs and LED colours you can click to edit.
+  knobs and LED colours you can click to edit. Known models are drawn with their real
+  layout: 3+1, 5, 6, 6+2, 9+3, 12+2, 15+3 and 16+3 keys + knobs.
 - **A command-line tool** (`macropad-remapper`) that saves and loads your setup as plain
   YAML files you can keep in git.
 - **A documented protocol** ([docs/protocol.md](docs/protocol.md)), so the knowledge
@@ -19,7 +20,7 @@ Macropad Remapper replaces that tool. It runs on Windows, Linux and macOS, and g
 
 | Supported keypads | USB ID |
 |---|---|
-| Tested | `514C:8850` (16 keys + 3 knobs) |
+| Tested | `514C:8850` (16 keys + 3 knobs). Every kind of action below has been written to it and checked |
 | Expected to work (same protocol) | `1189` or `514C` with product `8830`, `8831`, `8832`, `8833`, `8840`, `8842`, `8851` |
 
 Some older `1189:8840/8842/8890` boards use a different protocol. If yours doesn't answer
@@ -31,10 +32,27 @@ the connect step, try [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-ke
 - **Media keys:** play/pause, next, previous, volume, mute, calculator, browser back, …
 - **Mouse:** left/middle/right click, scroll up/down, optionally while holding Ctrl/Shift/Alt.
 - **Timed macros:** up to 18 key taps with a delay of up to 60 s before each.
-- **LEDs:** the effect mode per layer and a colour per key.
+- **LEDs:** a colour per key, and an effect per layer:
+
+  | Effect | What it does |
+  |---|---|
+  | Off | All LEDs off |
+  | Steady | Every key glows in its own colour |
+  | Light on press | A key lights up only while pressed |
+  | Ripple | The light spreads from the pressed key to its neighbours |
+  | Wave | Steady colours with a fading wave across the pad |
+  | Gradient | Built-in green-to-amber gradient |
+
 - **Layers and knobs:** all of the above for each of the 3 layers, and for knob
   turn-left / press / turn-right.
-- **Per-app layer files:** save a layer as e.g. `lightroom.yaml` and load it into any layer, or combine several in one setup file. See [examples/layers](examples/layers).
+- **Per-app layer files:** save a layer as e.g. `lightroom.yaml` and load it into any
+  layer, or combine several in one setup file. Ready-made layers for
+  [NegPy](examples/layers/negpy.yaml), [Lightroom Classic](examples/layers/lightroom.yaml)
+  and [media control](examples/layers/media.yaml) are in [examples/layers](examples/layers).
+
+> **Good to know:** after you save key changes, the keypad stops updating its LEDs until
+> you unplug it and plug it back in. Your settings are stored; the replug just makes them
+> show. The app reminds you when it's needed.
 
 ## Quick start
 
@@ -64,8 +82,8 @@ No keypad yet? Try `macropad-remapper-gui --simulate 16,3` or
   can't leave the keypad half-written.
 - **Nothing is lost on a round trip.** Settings the tool doesn't understand yet are kept
   byte-for-byte: a dump uploaded back writes nothing.
-- **Risky commands are gated.** Changing the keypad's layout preset needs an explicit flag,
-  and the vendor's unknown (probably factory-reset) command is not implemented.
+- **Risky commands are gated.** Changing the keypad's layout preset needs an explicit flag.
+  The vendor's "enter firmware-update mode" command is not implemented at all.
 - **The app never talks to the network.**
 
 ## Building from source
@@ -98,13 +116,16 @@ for investigating new keypad models.
 
 ## Help wanted
 
-Several protocol details are still unconfirmed; [docs/protocol.md](docs/protocol.md) marks
-each one. Things you can help with:
+The protocol is now well understood: [docs/protocol.md](docs/protocol.md) marks what was
+confirmed on hardware and what is still open. Things you can help with:
 
-- Testing media/mouse/macro writes and other keypad models.
-- Naming the LED effect modes 0–5.
-- Confirming the order of each knob's three actions.
-- A USB capture (Wireshark + USBPcap) of the vendor tool would settle most of this.
+- **Other keypad models.** Only the 16-key + 3-knob `514C:8850` has been tested. If you
+  have another size, please open an issue with the output of `macropad-remapper info`
+  and whether reading and writing work.
+- **Older firmware** (protocol generation below 10) is read-only for now; a tester would
+  help make it writable.
+- **The vendor's phone-gesture mouse actions** (*Like* and four swipes) are kept as they
+  are, but their exact codes haven't been confirmed.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
