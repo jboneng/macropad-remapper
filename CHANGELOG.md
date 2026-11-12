@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.1] - 2026-11-12
 
 ### Changed
 - **The app draws known keypad models the way they really look.**
@@ -123,6 +123,7 @@ Initial version, built from static analysis of the vendor tool `MINI_KEYBOARD.ex
 - **Packaging:** Linux udev rule, cross-platform CI, example profile, and MIT/Apache-2.0
   licences.
 
+[0.3.1]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.3.1
 [0.3.0]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.3.0
 [0.2.1]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.2.0
