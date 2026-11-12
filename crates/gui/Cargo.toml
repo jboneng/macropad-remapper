@@ -38,6 +38,7 @@ and set LED colours. Includes the desktop app and the command-line tool."""
 section = "utils"
 priority = "optional"
 depends = "$auto"
+recommends = "libgl1, libxkbcommon-x11-0, libwayland-client0, xdg-desktop-portal"
 maintainer-scripts = "../../packaging/linux/debian/"
 assets = [
     ["target/release/macropad-remapper-gui", "usr/bin/", "755"],
