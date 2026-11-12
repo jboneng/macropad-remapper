@@ -143,6 +143,11 @@ The app then:
 The status bar at the bottom tells you how many keys were written and where the backup
 is. Changes take effect immediately and survive unplugging.
 
+> **Lighting after changing keys:** once you write key changes, the keypad stops
+> updating its LEDs (they may go dark) until you **unplug it and plug it back in**.
+> Your settings are saved; replugging just makes the keypad show them. Lighting-only
+> changes show straight away.
+
 ### Save and open profiles
 
 - **Save** writes everything you see (all layers and LEDs) to a `.yaml` file.

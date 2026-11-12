@@ -93,10 +93,15 @@ fn handle(job: Job, kp: &mut Option<Keypad<Box<dyn Transport>>>) -> Result<Reply
             Ok(Reply::Image(
                 Box::new(after),
                 format!(
-                    "Wrote {} key(s) and {} LED layer(s). Backup: {}",
+                    "Wrote {} key(s) and {} LED layer(s). Backup: {}{}",
                     rep.records_written,
                     rep.led_layers_written,
-                    path.display()
+                    path.display(),
+                    if rep.needs_replug_for_leds() {
+                        format!("\n{}", macropad_remapper_device::REPLUG_HINT)
+                    } else {
+                        String::new()
+                    }
                 ),
             ))
         }

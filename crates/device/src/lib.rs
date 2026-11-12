@@ -315,6 +315,19 @@ pub struct ApplyReport {
     pub frames: Vec<Frame>,
 }
 
+impl ApplyReport {
+    /// After a commit (any key change), the 514C:8850 stops updating its live LEDs,
+    /// even for later LED-only writes, until it is unplugged. The settings are stored;
+    /// they just show after a replug.
+    pub fn needs_replug_for_leds(&self) -> bool {
+        self.records_written > 0
+    }
+}
+
+/// Message for users after a write that changed keys.
+pub const REPLUG_HINT: &str =
+    "Unplug and replug the keypad to see the lighting: after saving keys it stops updating its LEDs until it is reconnected.";
+
 pub struct Keypad<T: Transport> {
     t: T,
     pub handshake: Handshake,

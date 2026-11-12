@@ -180,6 +180,9 @@ fn run(cli: Cli) -> Result<()> {
                 rep.led_layers_written,
                 if rep.frames.is_empty() { " — keypad already matches" } else { "" }
             );
+            if !*dry_run && rep.needs_replug_for_leds() {
+                println!("note: {}", macropad_remapper_device::REPLUG_HINT);
+            }
         }
         Cmd::Led { layer, mode, colors, dry_run } => {
             if !(1..=3).contains(layer) {
