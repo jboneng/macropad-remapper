@@ -22,6 +22,15 @@ Confidence legend: **H** = confirmed on real hardware (514C:8850, 2026-11-12),
   vendor tool's built-in default table.
 - **Write key.** `FD 0A 01 01 00 01 00 00 04` followed by `FD FE FF` set layer 1 slot 10 to
   `a`. It read back correctly, and pressing the key typed `a`.
+- **Write LEDs.** LED settings persist across a replug only when the keypad receives the
+  LED block for **all three layers** (`FE B0 00`, `FE B0 01`, `FE B0 02`) and **no commit
+  follows**.
+  - Sending `FD FE FF` after the LED frames makes the keypad restore its stored LED
+    settings: the colours change live but reset on replug.
+  - This matches the vendor tool, which commits only when key records were written.
+  - When keys and LEDs change together, the vendor sends records, then LEDs, then the
+    commit, and macropad-remapper does the same. Whether the LEDs persist in that
+    combined case is not yet confirmed (?).
 
 ## Device identification (O)
 
@@ -50,11 +59,12 @@ Confidence legend: **H** = confirmed on real hardware (514C:8850, 2026-11-12),
 | Write record (O) | `rec[0..63]` | none |
 | Commit (O) | `FD FE FF` | none. The vendor app sleeps 200 ms afterwards |
 | Read LEDs (O) | `FA B0 L` (L = layer 0..2) | `r[2]` = mode, `r[3..50]` = 16 × RGB |
-| Write LEDs (O) | `FE B0 L mode RGB×16` | none. Sent for each of the 3 layers, then commit |
+| Write LEDs (**H**) | `FE B0 L mode RGB×16` | none. Send all 3 layers (L = 0, 1, 2) and **no commit** for an LED-only change; a commit makes the LEDs reset on replug |
 | Select layout (O) | `FC FC keys knobs flag` | none. The vendor then rewrites defaults and re-handshakes. **Dangerous** |
 | Unknown (O/?) | `EF EF` | none. Purpose unknown (factory reset?). **Not used** |
 
-- The vendor app always sends the commit after a batch of record writes (O).
+- The vendor app sends the commit only after a batch of record writes, never for an
+  LED-only change (O, **H**).
 - The number of records `n` the app requests in `FA n` is not yet confirmed (?).
   This tool requests `keys + 3 × knobs` and stops early if a read times out.
 - Slot 0 is unused. Slots 1..keys are keys. Knob slots follow; their order

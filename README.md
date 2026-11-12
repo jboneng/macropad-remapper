@@ -96,7 +96,7 @@ for investigating new keypad models.
 Several protocol details are still unconfirmed; [docs/protocol.md](docs/protocol.md) marks
 each one. Things you can help with:
 
-- Testing media/mouse/macro/LED writes and other keypad models.
+- Testing media/mouse/macro writes and other keypad models.
 - Naming the LED effect modes 0–5.
 - Confirming the order of each knob's three actions.
 - A USB capture (Wireshark + USBPcap) of the vendor tool would settle most of this.

@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-12
+
+### Fixed
+- **LED colours and modes now survive unplugging the keypad.** Previously they changed
+  straight away but reset to factory on the next replug. Writes now follow the vendor
+  tool exactly:
+  - The LED block is sent for **all three layers**, not just the changed one.
+  - **No commit** follows an LED-only change. The commit command made the keypad restore
+    its stored LED settings.
+  - Confirmed on a 514C:8850.
+- **One commit per write.** Key records are now written in one batch with a single commit
+  at the end, instead of a commit after every layer.
+
 ## [0.2.0] - 2026-11-12
 
 First version tested against a real keypad (514C:8850, 16 keys + 3 knobs).
@@ -69,4 +82,5 @@ Initial version, built from static analysis of the vendor tool `MINI_KEYBOARD.ex
 - **Packaging:** Linux udev rule, cross-platform CI, example profile, and MIT/Apache-2.0
   licences.
 
+[0.2.1]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.2.0

@@ -383,34 +383,36 @@ impl<T: Transport> Keypad<T> {
             }
             layer_records.push(changed);
         }
-        let mut led_writes = Vec::new();
+        // LEDs: the new configuration of every layer (profile value, else what the keypad has).
+        let mut new_leds = image.leds.clone();
         for (li, layer) in profile.layers.iter().enumerate() {
             if let Some(spec) = &layer.leds {
-                let cfg = spec.to_config()?;
-                if cfg != image.leds[li] {
-                    led_writes.push((li as u8, cfg));
-                }
+                new_leds[li] = spec.to_config()?;
             }
         }
+        let leds_changed = new_leds != image.leds;
 
-        // Then send: records layer by layer (commit after each changed layer,
-        // like the vendor tool), then LEDs followed by one commit.
+        // Then send exactly like the vendor tool's "download":
+        //   all changed key records → (if any LED changed) the LED block of *all three*
+        //   layers in order 0,1,2 → one commit.
+        // The firmware only persists LED settings when it receives the complete set;
+        // writing just the changed layer lights the keys but is lost on replug.
         let mut report = ApplyReport::default();
-        for changed in layer_records {
-            if changed.is_empty() {
-                continue;
-            }
-            for rec in &changed {
+        for changed in &layer_records {
+            for rec in changed {
                 self.send(frame::write_record(rec))?;
             }
             report.records_written += changed.len();
-            self.commit()?;
         }
-        for (layer, cfg) in &led_writes {
-            self.send(frame::write_leds(*layer, cfg))?;
+        if leds_changed {
+            for (layer, cfg) in new_leds.iter().enumerate() {
+                self.send(frame::write_leds(layer as u8, cfg))?;
+            }
+            report.led_layers_written = new_leds.len();
         }
-        if !led_writes.is_empty() {
-            report.led_layers_written = led_writes.len();
+        // The vendor tool only sends the commit when key records were written; for an
+        // LED-only change it sends just the three FE B0 frames.
+        if report.records_written > 0 {
             self.commit()?;
         }
         report.frames = self.mutations[start..].to_vec();
@@ -507,10 +509,39 @@ mod tests {
         let image = k.read_image().unwrap();
         let profile = Profile::from_yaml("layers:\n  - {}\n  - leds: { mode: 3, colors: ['#102030'] }\n").unwrap();
         let rep = k.apply(&profile, &image).unwrap();
-        assert_eq!(rep.led_layers_written, 1);
+        // Like the vendor tool: all three LED layers in order, then one commit —
+        // the firmware only persists LEDs when it gets the full set.
+        assert_eq!(rep.led_layers_written, 3);
+        let heads: Vec<[u8; 4]> = rep.frames.iter().map(|f| [f[1], f[2], f[3], f[4]]).collect();
+        assert_eq!(
+            heads,
+            vec![[0xFE, 0xB0, 0, 0], [0xFE, 0xB0, 1, 3], [0xFE, 0xB0, 2, 0]]
+        );
         let leds = k.read_leds(1).unwrap();
         assert_eq!(leds.mode, 3);
         assert_eq!(leds.colors[0], [0x10, 0x20, 0x30]);
+        // unchanged layers are re-sent with their current values
+        assert_eq!(k.read_leds(0).unwrap(), image.leds[0]);
+    }
+
+    #[test]
+    fn records_then_leds_then_single_commit() {
+        let mut k = Keypad::connect(sim(), false).unwrap();
+        let image = k.read_image().unwrap();
+        let profile =
+            Profile::from_yaml("layers:\n  - slots: { 1: a }\n  - slots: { 2: b }\n    leds: { mode: 1 }\n").unwrap();
+        let rep = k.apply(&profile, &image).unwrap();
+        let kinds: Vec<&str> = rep
+            .frames
+            .iter()
+            .map(|f| match (f[1], f[2]) {
+                (0xFD, 0xFE) => "commit",
+                (0xFE, 0xB0) => "led",
+                _ => "record",
+            })
+            .collect();
+        assert_eq!(kinds, ["record", "record", "led", "led", "led", "commit"]);
+        assert_eq!(k.into_transport().commits, 1);
     }
 
     #[test]
@@ -519,8 +550,8 @@ mod tests {
         let image = k.read_image().unwrap();
         let profile = Profile::from_yaml("layers:\n  - slots: { 1: a }\n    leds: { mode: 3 }\n").unwrap();
         let rep = k.apply(&profile, &image).unwrap();
-        assert_eq!((rep.records_written, rep.led_layers_written), (1, 1));
-        assert_eq!(rep.frames.len(), 4);
+        assert_eq!((rep.records_written, rep.led_layers_written), (1, 3));
+        assert_eq!(rep.frames.len(), 5, "record + 3 LED layers + commit (records changed)");
         let t = k.into_transport();
         assert!(t.written.iter().all(|f| !frame::is_mutating(f)), "only reads reached the device");
         assert_eq!(t.commits, 0);
