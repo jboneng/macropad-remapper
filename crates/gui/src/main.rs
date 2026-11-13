@@ -4,6 +4,10 @@
 
 mod layout;
 mod theme;
+#[cfg(feature = "self-update")]
+mod update;
+#[cfg(feature = "self-update")]
+mod update_ui;
 mod widgets;
 mod worker;
 
@@ -41,6 +45,8 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| {
             theme::apply(&cc.egui_ctx);
             let mut app = App::default();
+            #[cfg(feature = "self-update")]
+            app.updates.on_startup(&cc.egui_ctx);
             if let Some((k, n)) = simulate {
                 app.start_simulator(k, n);
             } else if std::env::args().any(|a| a == "--connect") {
@@ -217,6 +223,8 @@ struct App {
     confirm_write: bool,
     /// Optional names per layer ("Lightroom"), from layer files; not stored on the keypad.
     layer_names: Vec<String>,
+    #[cfg(feature = "self-update")]
+    updates: update_ui::UpdateUi,
 }
 
 impl Default for App {
@@ -237,6 +245,8 @@ impl Default for App {
             recording: false,
             confirm_write: false,
             layer_names: vec![String::new(); LAYERS],
+            #[cfg(feature = "self-update")]
+            updates: update_ui::UpdateUi::new(),
         }
     }
 }
@@ -419,6 +429,11 @@ impl eframe::App for App {
                 }
             }
         }
+        #[cfg(feature = "self-update")]
+        if let Some((msg, is_error)) = self.updates.poll(&ctx) {
+            self.status = msg;
+            self.status_is_error = is_error;
+        }
         if self.busy {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
@@ -434,10 +449,15 @@ impl eframe::App for App {
                     if self.busy {
                         ui.spinner();
                     }
+                    #[cfg(feature = "self-update")]
+                    self.updates.status_bar(ui);
                     let color = if self.status_is_error { DANGER } else { MUTED };
                     ui.label(RichText::new(&self.status).small().color(color));
                 });
             });
+
+        #[cfg(feature = "self-update")]
+        self.updates.dialog(&ctx, self.busy);
 
         if self.actions.is_empty() {
             egui::CentralPanel::default()
@@ -471,6 +491,8 @@ impl App {
             ui.label(RichText::new("⌨").size(22.0).color(ACCENT));
             ui.label(RichText::new("Macropad Remapper").size(18.0).strong().color(TEXT));
             ui.label(RichText::new(concat!("v", env!("CARGO_PKG_VERSION"))).small().color(MUTED));
+            #[cfg(feature = "self-update")]
+            self.updates.chip(ui);
             ui.add_space(16.0);
             let idle = !self.busy;
             let connected = self.image.is_some();
@@ -489,6 +511,8 @@ impl App {
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                #[cfg(feature = "self-update")]
+                self.updates.settings_menu(ui);
                 let changes = self.pending_changes();
                 let label = if changes == 0 { "Write to keypad".to_string() } else { format!("Write {changes} change(s)") };
                 if primary(ui, idle && changes > 0, &label).clicked() {

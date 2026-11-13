@@ -156,6 +156,8 @@ jobs:
           name: linux
           path: dist/*
 
+  # NOTE: the in-app updater (crates/gui/src/update.rs) finds its download by these asset
+  # name endings and needs SHA256SUMS.txt; keep both when changing the packaging above.
   release:
     needs: [version, windows, macos, linux]
     if: startsWith(github.ref, 'refs/tags/')

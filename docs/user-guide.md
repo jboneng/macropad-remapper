@@ -155,6 +155,26 @@ is. Changes take effect immediately and survive unplugging.
   press **Write**, so you can review it first. Opening a *layer file* puts it into the
   layer that is currently selected.
 
+### Updates
+
+When the app starts, it checks GitHub for a newer release. If there is one, a purple
+**⬆ vX.Y.Z available** button appears next to the version number.
+
+- **Click it** to read what's new, then press **Download & install**. The app downloads
+  the right file for how you installed it (Windows installer, portable zip, macOS app,
+  `.deb` or `.rpm`), checks it against the release's `SHA256SUMS.txt`, installs it, and
+  reopens. On Linux you are asked for your password. On Windows the installer may ask for
+  permission if you installed for all users.
+- **Skip this version** hides the button until the next release. **Later** hides it
+  until the app is next opened.
+- **To turn the check off**, open the **⚙** menu at the top right and untick **Check for
+  updates on startup**. **Check for updates now** in the same menu checks on demand.
+
+The setting is stored in `settings.yaml` in `%APPDATA%\macropad-remapper` (Windows),
+`~/Library/Application Support/macropad-remapper` (macOS) or `~/.config/macropad-remapper`
+(Linux). The check only fetches the public release list from GitHub; nothing about you or
+your keypad is sent.
+
 ### Per-app layers (layer files)
 
 You can keep one file per app, e.g. `lightroom.yaml` or `negpy.yaml`, and put each on

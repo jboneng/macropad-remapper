@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-13
+
+### Added
+- **Updates from inside the app.** On startup the app checks GitHub for a newer release
+  and shows a **⬆ vX.Y.Z available** button. Clicking it shows the release notes and
+  installs the update: the Windows installer runs silently, portable copies replace
+  themselves, the macOS app swaps its bundle, and `.deb`/`.rpm` installs go through
+  `pkexec`. Every download is checked against the release's `SHA256SUMS.txt` before
+  anything runs. The app then reopens.
+- **⚙ menu** with **Check for updates on startup** (on by default) and **Check for
+  updates now**. **Skip this version** hides an update until the next one.
+- Packagers can build without the updater: `cargo build -p macropad-remapper-gui
+  --no-default-features`.
+
 ## [0.3.2] - 2026-11-12
 
 ### Fixed
@@ -151,6 +165,7 @@ Initial version, built from static analysis of the vendor tool `MINI_KEYBOARD.ex
 - **Packaging:** Linux udev rule, cross-platform CI, example profile, and MIT/Apache-2.0
   licences.
 
+[0.4.0]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.4.0
 [0.3.2]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.3.2
 [0.3.1]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.3.1
 [0.3.0]: https://github.com/jboneng/macropad-remapper/releases/tag/v0.3.0

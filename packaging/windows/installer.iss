@@ -36,6 +36,8 @@ LicenseFile=..\..\LICENSE-MIT
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; Close a running app before replacing files (in-app updates start the installer from it).
+CloseApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -62,3 +64,6 @@ Name: "{autodesktop}\Macropad Remapper"; Filename: "{app}\macropad-remapper-gui.
 
 [Run]
 Filename: "{app}\macropad-remapper-gui.exe"; Description: "{cm:LaunchProgram,Macropad Remapper}"; Flags: nowait postinstall skipifsilent
+; In-app updates run this installer with /SILENT: reopen the app afterwards (as the
+; signed-in user, even if the installer elevated itself for an all-users install).
+Filename: "{app}\macropad-remapper-gui.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent

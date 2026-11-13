@@ -84,7 +84,9 @@ No keypad yet? Try `macropad-remapper-gui --simulate 16,3` or
   byte-for-byte: a dump uploaded back writes nothing.
 - **Risky commands are gated.** Changing the keypad's layout preset needs an explicit flag.
   The vendor's "enter firmware-update mode" command is not implemented at all.
-- **The app never talks to the network.**
+- **The only network access is the update check**: the desktop app asks GitHub for the
+  latest release list on startup. You can turn this off in the **⚙** menu; the command-line
+  tool never goes online.
 
 ## Building from source
 
